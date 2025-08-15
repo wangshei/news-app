@@ -1,103 +1,130 @@
-import Image from "next/image";
+"use client"
 
-export default function Home() {
+import { useState } from "react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Plus } from "lucide-react"
+import Sidebar from "@/components/Sidebar"
+import HeaderDate from "@/components/HeaderDate"
+import KanbanColumn from "@/components/KanbanColumn"
+import ExpandableCard from "@/components/ExpandableCard"
+
+export default function HomePage() {
+  const [isAddColumnModalOpen, setIsAddColumnModalOpen] = useState(false)
+  const [newColumnName, setNewColumnName] = useState("")
+  const [categories, setCategories] = useState(["科技", "社会", "经济", "政治"])
+
+  const openAddColumnDialog = () => {
+    if (categories.length < 6) {
+      setNewColumnName("")
+      setIsAddColumnModalOpen(true)
+    }
+  }
+
+  const handleAddCategory = () => {
+    if (newColumnName.trim() && categories.length < 6) {
+      setCategories([...categories, newColumnName.trim()])
+      setIsAddColumnModalOpen(false)
+      setNewColumnName("")
+    }
+  }
+
+  const handleCancelAddCategory = () => {
+    setIsAddColumnModalOpen(false)
+    setNewColumnName("")
+  }
+
+  const mockNewsItems = [
+    { id: 1, time: "2小时前", title: "人工智能新突破", hasImage: true },
+    { id: 2, time: "2小时前", title: "科技创新发展", hasImage: false },
+    { id: 3, time: "4小时前", title: "市场动态分析", hasImage: true },
+    { id: 4, time: "6小时前", title: "政策解读报告", hasImage: false },
+  ]
+
   return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+    <div className="flex h-screen w-full max-w-[1512px] mx-auto bg-background">
+      <Sidebar />
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+      {/* Main Content Area - Scrollable */}
+      <main className="main-content flex-1 overflow-y-auto">
+        <div className="content-wrapper p-8 space-y-8">
+          <HeaderDate />
+
+          {/* Section 1: Today's Discovery */}
+          <section className="discovery-section">
+            <h2 className="text-lg font-medium text-foreground mb-4">今日发现</h2>
+            <ExpandableCard title="今日发现" />
+          </section>
+
+          {/* Section 2: Quick Browse */}
+          <section className="browse-section">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-medium text-foreground">快速浏览</h2>
+              <Button
+                variant="outline"
+                size="sm"
+                className="add-category-btn w-8 h-8 rounded-full p-0 bg-transparent"
+                onClick={openAddColumnDialog}
+                disabled={categories.length >= 6}
+              >
+                <Plus className="w-4 h-4" />
+              </Button>
+            </div>
+
+            <div
+              className={`kanban-grid grid gap-6 ${
+                categories.length === 1
+                  ? "grid-cols-1"
+                  : categories.length === 2
+                    ? "grid-cols-2"
+                    : categories.length === 3
+                      ? "grid-cols-3"
+                      : categories.length === 4
+                        ? "grid-cols-4"
+                        : categories.length === 5
+                          ? "grid-cols-5"
+                          : "grid-cols-6"
+              }`}
+            >
+              {categories.map((category, index) => (
+                <KanbanColumn key={index} category={category} newsItems={mockNewsItems} />
+              ))}
+            </div>
+          </section>
         </div>
       </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+
+
+
+      <Dialog open={isAddColumnModalOpen} onOpenChange={setIsAddColumnModalOpen}>
+        <DialogContent className="add-column-modal max-w-md">
+          <DialogHeader>
+            <DialogTitle>添加新类别</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <Input
+              placeholder="请输入类别名称"
+              value={newColumnName}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewColumnName(e.target.value)}
+              onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
+                if (e.key === "Enter") {
+                  handleAddCategory()
+                }
+              }}
+              className="w-full"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={handleCancelAddCategory}>
+              取消
+            </Button>
+            <Button onClick={handleAddCategory} disabled={!newColumnName.trim()}>
+              添加
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
-  );
+  )
 }
