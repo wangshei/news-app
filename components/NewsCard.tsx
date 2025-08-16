@@ -1,12 +1,12 @@
 import { Card, CardContent } from "@/components/ui/card"
-import { useState } from "react"
-import TrendChat from "./TrendChat"
+import { useRouter } from "next/navigation"
 
 interface NewsItem {
   id: number
   time: string
   title: string
   hasImage: boolean
+  url?: string
 }
 
 interface NewsCardProps {
@@ -15,46 +15,29 @@ interface NewsCardProps {
 }
 
 export default function NewsCard({ item, category }: NewsCardProps) {
-  const [showChat, setShowChat] = useState(false)
+  const router = useRouter()
 
-  // Mock trend data based on the news item
-  const mockTrend: any = {
-    id: item.id.toString(),
-    title: item.title,
-    summary: `关于"${item.title}"的最新动态和分析`,
-    description: `这是一个关于"${item.title}"的深入分析。该话题在当前${category}领域引起了广泛关注，涉及多个方面的讨论和影响。`,
-    category: category,
-    sources: [
-      {
-        id: "1",
-        name: "权威媒体",
-        quote: `关于"${item.title}"的详细报道和分析`,
-        url: "https://example.com/source1",
-      },
-      {
-        id: "2",
-        name: "专业机构",
-        quote: `"${item.title}"相关的研究报告和数据`,
-        url: "https://example.com/source2",
-      },
-    ],
+  // Map category to API ID for the unified chat system
+  const getCategoryId = (category: string) => {
+    const categoryMap: { [key: string]: string } = {
+      "科技": "tech",
+      "社会": "society", 
+      "经济": "economy",
+      "政治": "politics"
+    }
+    return categoryMap[category] || "society"
   }
 
-  if (showChat) {
-    return (
-      <TrendChat 
-        trend={mockTrend} 
-        skipTopicSelection={true}
-        onBack={() => setShowChat(false)}
-        className="fixed inset-0 z-[9999] bg-[var(--surface)] overflow-y-auto w-screen h-screen max-w-none"
-      />
-    )
+  const handleCardClick = () => {
+    // Navigate to the unified chat system with the appropriate category ID
+    const categoryId = getCategoryId(category)
+    router.push(`/chat?id=${categoryId}`)
   }
 
   return (
     <Card 
       className="news-item hover:shadow-sm transition-shadow cursor-pointer hover:bg-[var(--surface-alt)]"
-      onClick={() => setShowChat(true)}
+      onClick={handleCardClick}
     >
       <CardContent className="p-3 py-0">
         {item.hasImage && (

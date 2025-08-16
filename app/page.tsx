@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -14,6 +14,8 @@ export default function HomePage() {
   const [isAddColumnModalOpen, setIsAddColumnModalOpen] = useState(false)
   const [newColumnName, setNewColumnName] = useState("")
   const [categories, setCategories] = useState(["科技", "社会", "经济", "政治"])
+  const [headlines, setHeadlines] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
 
   const openAddColumnDialog = () => {
     if (categories.length < 6) {
@@ -35,6 +37,56 @@ export default function HomePage() {
     setNewColumnName("")
   }
 
+  // Fetch headlines data for Kanban columns
+  useEffect(() => {
+    const fetchHeadlines = async () => {
+      try {
+        console.log('Fetching headlines from /api/headlines...')
+        const response = await fetch('/api/headlines')
+        if (response.ok) {
+          const data = await response.json()
+          console.log('Headlines data received:', data)
+          if (data.success && data.data.headlines) {
+            setHeadlines(data.data.headlines)
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch headlines:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchHeadlines()
+  }, [])
+
+
+
+  // Transform headlines data for Kanban columns
+  const getNewsItemsForCategory = (category: string) => {
+    if (!headlines) return []
+    
+    const categoryMap: { [key: string]: string } = {
+      "科技": "tech",
+      "社会": "society", 
+      "经济": "economy",
+      "政治": "politics"
+    }
+    
+    const mappedCategory = categoryMap[category]
+    if (!mappedCategory) return []
+    
+    const categoryHeadlines = headlines.filter((h: any) => h.category === mappedCategory)
+    
+    return categoryHeadlines.map((headline: any, index: number) => ({
+      id: index + 1,
+      time: "刚刚",
+      title: headline.title,
+      hasImage: false,
+      url: headline.url
+    }))
+  }
+
   const mockNewsItems = [
     { id: 1, time: "2小时前", title: "人工智能新突破", hasImage: true },
     { id: 2, time: "2小时前", title: "科技创新发展", hasImage: false },
@@ -43,7 +95,7 @@ export default function HomePage() {
   ]
 
   return (
-    <div className="flex h-screen w-full max-w-[1512px] mx-auto bg-[var(--surface)]">
+    <div className="flex h-screen w-full max-w-[1512px] mx-auto bg-[var(--surface-third)]">
       <Sidebar />
 
       {/* Main Content Area - Scrollable */}
@@ -56,6 +108,8 @@ export default function HomePage() {
             <h2 className="text-lg font-medium text-[var(--text)] mb-4">今日发现</h2>
             <ExpandableCard title="今日发现" />
           </section>
+
+
 
           {/* Section 2: Quick Browse */}
           <section className="browse-section">
@@ -88,7 +142,11 @@ export default function HomePage() {
               }`}
             >
               {categories.map((category, index) => (
-                <KanbanColumn key={index} category={category} newsItems={mockNewsItems} />
+                <KanbanColumn 
+                  key={index} 
+                  category={category} 
+                  newsItems={loading ? mockNewsItems : getNewsItemsForCategory(category)} 
+                />
               ))}
             </div>
           </section>

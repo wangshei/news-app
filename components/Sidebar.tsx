@@ -2,7 +2,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 
 export default function Sidebar() {
   return (
-    <aside className="sidebar-container w-[260px] bg-[var(--surface-secondary)] border-r border-[var(--surface-alt)] flex flex-col">
+    <aside className="sidebar-container w-[200px] bg-[var(--surface-secondary)] border-r border-[var(--surface-alt)] flex flex-col">
       {/* Logo */}
               <div className="logo-section p-6">
           <div className="text-xl font-semibold text-[var(--text)]">小板凳</div>

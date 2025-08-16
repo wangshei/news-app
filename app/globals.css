@@ -112,8 +112,8 @@
    * Change these to adjust the overall look and feel
    */
   --surface-primary: #ffffff;      /* Main background - affects page background, cards */
-  --surface-secondary: #f4f4f46d;   /* Secondary background - affects sidebar, muted areas */
-  --surface-third: #cacaca71;   /* third background - affects sidebar, muted areas */
+  --surface-secondary: #dce5f36d;   /* Secondary background - affects sidebar, muted areas */
+  --surface-third: #dfdfdf35;   /* third background - affects sidebar, muted areas */
 
   /* 
    * TEXT COLORS - Typography hierarchy
