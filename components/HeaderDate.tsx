@@ -7,7 +7,7 @@ export default function HeaderDate() {
 
   return (
     <header className="date-header">
-      <h1 className="text-2xl font-semibold text-foreground">{today}</h1>
+      <h1 className="text-2xl font-semibold text-[var(--text)]">{today}</h1>
     </header>
   )
 } 

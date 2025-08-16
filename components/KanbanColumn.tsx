@@ -28,14 +28,14 @@ export default function KanbanColumn({ category, newsItems }: KanbanColumnProps)
 
   return (
     <div className="kanban-column">
-      <h3 className="text-base font-medium text-foreground mb-4">{category}</h3>
+      <h3 className="text-base font-medium text-[var(--text)] mb-4">{category}</h3>
       <div className="space-y-4">
         {Object.entries(groupedItems).map(([time, items]) => (
           <div key={time} className="time-group">
-            <div className="text-xs text-muted-foreground mb-2 font-medium">{time}</div>
+            <div className="text-xs text-[var(--muted-text)] mb-2 font-medium">{time}</div>
             <div className="space-y-2">
               {items.map((item) => (
-                <NewsCard key={item.id} item={item} />
+                <NewsCard key={item.id} item={item} category={category} />
               ))}
             </div>
           </div>

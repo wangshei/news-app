@@ -43,7 +43,7 @@ export default function HomePage() {
   ]
 
   return (
-    <div className="flex h-screen w-full max-w-[1512px] mx-auto bg-background">
+    <div className="flex h-screen w-full max-w-[1512px] mx-auto bg-[var(--surface)]">
       <Sidebar />
 
       {/* Main Content Area - Scrollable */}
@@ -53,14 +53,14 @@ export default function HomePage() {
 
           {/* Section 1: Today's Discovery */}
           <section className="discovery-section">
-            <h2 className="text-lg font-medium text-foreground mb-4">今日发现</h2>
+            <h2 className="text-lg font-medium text-[var(--text)] mb-4">今日发现</h2>
             <ExpandableCard title="今日发现" />
           </section>
 
           {/* Section 2: Quick Browse */}
           <section className="browse-section">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-medium text-foreground">快速浏览</h2>
+              <h2 className="text-lg font-medium text-[var(--text)]">快速浏览</h2>
               <Button
                 variant="outline"
                 size="sm"

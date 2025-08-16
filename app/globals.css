@@ -1,5 +1,27 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "../styles/tokens.css";
+
+/*
+ * 🎨 COLOR SYSTEM QUICK REFERENCE
+ * 
+ * To change theme colors, edit ONLY these variables:
+ * 
+ * PRIMARY COLORS (Brand):
+ *   --primary-blue: #2f76ff        (Main accent - buttons, active states)
+ *   --primary-blue-hover: #1d4ed8  (Hover states)
+ * 
+ * SURFACE COLORS (Backgrounds):
+ *   --surface-primary: #ffffff      (Main backgrounds)
+ *   --surface-secondary: #f7f6f3   (Secondary areas)
+ * 
+ * TEXT COLORS (Typography):
+ *   --text-primary: #37352f        (Main text)
+ *   --text-secondary: #4b5563      (Secondary text)
+ * 
+ * See COLOR_GUIDE.md for detailed explanations!
+ */
 
 @custom-variant dark (&:is(.dark *));
 
@@ -57,8 +79,8 @@
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
   --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --accent: #7298ca;
+  --accent-foreground: #ffffff;
   --destructive: oklch(0.577 0.245 27.325);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
@@ -76,6 +98,68 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  
+  /* ===== NOTION THEME COLOR SYSTEM ===== */
+  /* 
+   * PRIMARY COLORS - Change these to update the entire theme
+   * These are the main brand colors that affect buttons, links, and highlights
+   */
+  --primary-blue: #7298ca;        /* Main accent color - affects buttons, active states, links */
+  --primary-blue-hover: #1d4ed8;  /* Hover state for primary blue elements */
+  
+  /* 
+   * SURFACE COLORS - Background colors for different UI layers
+   * Change these to adjust the overall look and feel
+   */
+  --surface-primary: #ffffff;      /* Main background - affects page background, cards */
+  --surface-secondary: #f4f4f46d;   /* Secondary background - affects sidebar, muted areas */
+  --surface-third: #cacaca71;   /* third background - affects sidebar, muted areas */
+
+  /* 
+   * TEXT COLORS - Typography hierarchy
+   * Change these to adjust text readability and contrast
+   */
+  --text-primary: #232323;        /* Main text color - affects headings, body text, important content */
+  --text-secondary: #9d9d9d;      /* Secondary text - affects labels, timestamps, less important info */
+  
+  /* 
+   * CATEGORY COLORS - New accent colors for different content categories
+   * Primary (darker) and Secondary (lighter) variants for each color family
+   */
+  --category-red-primary: #DD4A48;      /* Darker red for primary category elements */
+  --category-red-secondary: #FF6464;    /* Lighter red for secondary category elements */
+  
+  --category-orange-primary: #FF8474;   /* Darker orange for primary category elements */
+  --category-orange-secondary: #FFC996; /* Lighter orange for secondary category elements */
+  --category-peach: #ECB390;            /* Peach variant */
+  
+  --category-yellow-primary: #FFE162;   /* Darker yellow for primary category elements */
+  --category-yellow-secondary: #FFF1CE; /* Lighter yellow for secondary category elements */
+  --category-gold: #D29D2B;             /* Gold variant */
+  
+  --category-green-primary: #139487;    /* Darker green for primary category elements */
+  --category-green-secondary: #91C483;  /* Lighter green for secondary category elements */
+  
+  --category-blue-primary: #00B4D8;     /* Darker blue for primary category elements */
+  --category-blue-secondary: #86C6F4;   /* Lighter blue for secondary category elements */
+  --category-blue-dark: #03045E;        /* Dark blue variant */
+  
+  --category-purple-primary: #583D72;   /* Darker purple for primary category elements */
+  --category-purple-secondary: #9F5F80; /* Lighter purple for secondary category elements */
+  
+  --category-pink-primary: #FF5C8D;     /* Darker pink for primary category elements */
+  --category-pink-secondary: #FDEFF4;   /* Lighter pink for secondary category elements */
+  
+  /* 
+   * LEGACY VARIABLES - These map to shadcn/ui system
+   * Don't change these directly - they automatically use the colors above
+   */
+  --surface: var(--surface-primary);
+  --surface-alt: var(--surface-third);
+  --text: var(--text-primary);
+  --muted-text: var(--text-secondary);
+  --accent: var(--primary-blue);
+  --accent-hover: var(--primary-blue-hover);
 }
 
 .dark {
@@ -110,6 +194,39 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+  
+  /* ===== NOTION THEME DARK MODE COLORS ===== */
+  /* 
+   * DARK MODE PRIMARY COLORS - Same blue for consistency
+   * These stay the same as light mode for brand consistency
+   */
+  --primary-blue: #7298ca;        /* Same blue accent in dark mode */
+  --primary-blue-hover: #699dff;  /* Lighter blue for dark mode hover */
+  
+  /* 
+   * DARK MODE SURFACE COLORS - Dark backgrounds
+   * Change these to adjust dark mode appearance
+   */
+  --surface-primary: #2f3437;     /* Dark main background */
+  --surface-secondary: #202324;   /* Dark secondary background */
+  
+  /* 
+   * DARK MODE TEXT COLORS - Light text on dark backgrounds
+   * Change these to adjust dark mode text readability
+   */
+  --text-primary: #d3d1cb;        /* Light text for dark backgrounds */
+  --text-secondary: #9d9d9d;      /* Light secondary text */
+  
+  /* 
+   * DARK MODE LEGACY VARIABLES - Automatically mapped
+   * Don't change these directly
+   */
+  --surface: var(--surface-primary);
+  --surface-alt: var(--surface-secondary);
+  --text: var(--text-primary);
+  --muted-text: var(--text-secondary);
+  --accent: var(--primary-blue);
+  --accent-hover: var(--primary-blue-hover);
 }
 
 @layer base {
@@ -118,5 +235,8 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-family: "Noto Sans SC", "PingFang SC", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   }
 }
+
+
