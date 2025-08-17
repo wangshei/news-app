@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { FALLBACK_DATA } from "@/config/fallbackData";
 
 interface Headline {
   id: string;
@@ -31,14 +32,14 @@ export async function GET(
     const topicId = params.id;
     console.log("Fetching newsletter topic details for ID:", topicId);
 
-    // TODO: replace headlines mock with BrowserAgent scraping
+    // TODO: replace with real data from newsletter API
     const mockTrendDetails: { [key: string]: TrendDetail } = {
       "society": {
         id: "society",
-        title: "年轻人涌向\"三线城市\"",
-        summary: "随着气候变化问题日益严重，全球多个城市爆发了大规模的气候罢工活动，要求政府采取更积极的减排政策。",
-        description: "这是一个全球性的社会运动，反映了公众对气候变化问题的关注和担忧。从欧洲到亚洲，从学生到工人，不同群体都参与到这场运动中，要求政府和企业承担更多责任。",
-        category: "社会",
+        title: FALLBACK_DATA.newsletter.trends[0].title,
+        summary: FALLBACK_DATA.newsletter.trends[0].summary,
+        description: FALLBACK_DATA.newsletter.trends[0].summary,
+        category: FALLBACK_DATA.newsletter.trends[0].category,
         sources: [
           {
             id: "1",
@@ -53,29 +54,14 @@ export async function GET(
             url: "https://example.com/bbc-youth-climate"
           }
         ],
-        headlines: [
-          {
-            id: "soc-1",
-            title: "一线城市房租上涨20%，年轻人压力倍增",
-            source: "财经网",
-            url: "https://example.com/soc-1",
-            timestamp: "2024-01-15T10:00:00Z"
-          },
-          {
-            id: "soc-2", 
-            title: "三线城市人才政策优惠力度加大",
-            source: "人民网",
-            url: "https://example.com/soc-2",
-            timestamp: "2024-01-15T10:30:00Z"
-          }
-        ]
+        headlines: FALLBACK_DATA.newsletter.trends[0].headlines
       },
       "tech": {
         id: "tech",
-        title: "OpenAI发布多模态GPT-5，颠覆人机交互模式",
-        summary: "OpenAI最新发布的GPT-5模型支持文本、图像、音频等多种输入格式，标志着AI技术进入多模态时代。",
-        description: "GPT-5的发布代表了人工智能技术的重要里程碑。该模型不仅能够处理传统的文本输入，还能理解图像内容、识别语音指令，并生成相应的回应。这种多模态能力将彻底改变人机交互的方式。",
-        category: "科技",
+        title: FALLBACK_DATA.newsletter.trends[1].title,
+        summary: FALLBACK_DATA.newsletter.trends[1].summary,
+        description: FALLBACK_DATA.newsletter.trends[1].summary,
+        category: FALLBACK_DATA.newsletter.trends[1].category,
         sources: [
           {
             id: "3",
@@ -90,29 +76,14 @@ export async function GET(
             url: "https://example.com/mit-multimodal-ai"
           }
         ],
-        headlines: [
-          {
-            id: "tech-1",
-            title: "华为发布麒麟9000S芯片，性能提升40%",
-            source: "科技日报",
-            url: "https://example.com/tech-1",
-            timestamp: "2024-01-15T11:15:00Z"
-          },
-          {
-            id: "tech-2",
-            title: "中芯国际3nm工艺突破技术瓶颈",
-            source: "半导体观察",
-            url: "https://example.com/tech-2", 
-            timestamp: "2024-01-15T11:45:00Z"
-          }
-        ]
+        headlines: FALLBACK_DATA.newsletter.trends[1].headlines
       },
       "economy": {
         id: "economy",
-        title: "美联储维持高利率，全球经济增长预期下调",
-        summary: "美联储决定维持当前高利率水平，这一政策对全球金融市场产生重大影响，多国央行相应调整货币政策。",
-        description: "美联储的利率政策对全球经济具有重要影响。高利率环境虽然有助于控制通胀，但也会抑制经济增长和投资活动。各国央行需要在这一背景下平衡通胀控制和经济增长的关系。",
-        category: "经济",
+        title: FALLBACK_DATA.newsletter.trends[2].title,
+        summary: FALLBACK_DATA.newsletter.trends[2].summary,
+        description: FALLBACK_DATA.newsletter.trends[2].summary,
+        category: FALLBACK_DATA.newsletter.trends[2].category,
         sources: [
           {
             id: "5",
@@ -127,22 +98,7 @@ export async function GET(
             url: "https://example.com/ft-high-rates"
           }
         ],
-        headlines: [
-          {
-            id: "eco-1",
-            title: "数字人民币在港试点，交易量突破1000万",
-            source: "金融时报",
-            url: "https://example.com/eco-1",
-            timestamp: "2024-01-15T12:00:00Z"
-          },
-          {
-            id: "eco-2",
-            title: "新加坡加入数字人民币跨境支付网络",
-            source: "经济参考报",
-            url: "https://example.com/eco-2",
-            timestamp: "2024-01-15T12:30:00Z"
-          }
-        ]
+        headlines: FALLBACK_DATA.newsletter.trends[2].headlines
       }
     };
 

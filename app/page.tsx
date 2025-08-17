@@ -9,13 +9,31 @@ import Sidebar from "@/components/Sidebar"
 import HeaderDate from "@/components/HeaderDate"
 import KanbanColumn from "@/components/KanbanColumn"
 import ExpandableCard from "@/components/ExpandableCard"
+import { useNewsletter } from "@/hooks/useNewsletter"
+import { useHeadlines } from "@/hooks/useHeadlines"
+import { CATEGORIES } from "@/config/categories"
 
 export default function HomePage() {
   const [isAddColumnModalOpen, setIsAddColumnModalOpen] = useState(false)
   const [newColumnName, setNewColumnName] = useState("")
   const [categories, setCategories] = useState(["科技", "社会", "经济", "政治"])
   const [headlines, setHeadlines] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
+  
+  // Use the centralized newsletter hook
+  const { newsletter, loading: newsletterLoading, error: newsletterError } = useNewsletter()
+  
+  // Use the centralized headlines hook
+  const { headlines: headlinesData, loading: headlinesLoading, error: headlinesError } = useHeadlines()
+  
+  // Runtime sanity check
+  useEffect(() => {
+    if (newsletter?.trends) {
+      console.assert(
+        newsletter.trends.length === CATEGORIES.length,
+        "Newsletter trends mismatch"
+      );
+    }
+  }, [newsletter]);
 
   const openAddColumnDialog = () => {
     if (categories.length < 6) {
@@ -37,28 +55,12 @@ export default function HomePage() {
     setNewColumnName("")
   }
 
-  // Fetch headlines data for Kanban columns
+  // Use headlines data from the hook
   useEffect(() => {
-    const fetchHeadlines = async () => {
-      try {
-        console.log('Fetching headlines from /api/headlines...')
-        const response = await fetch('/api/headlines')
-        if (response.ok) {
-          const data = await response.json()
-          console.log('Headlines data received:', data)
-          if (data.success && data.data.headlines) {
-            setHeadlines(data.data.headlines)
-          }
-        }
-      } catch (error) {
-        console.error('Failed to fetch headlines:', error)
-      } finally {
-        setLoading(false)
-      }
+    if (headlinesData) {
+      setHeadlines(headlinesData.columns.flatMap(col => col.headlines))
     }
-
-    fetchHeadlines()
-  }, [])
+  }, [headlinesData])
 
 
 
@@ -87,12 +89,7 @@ export default function HomePage() {
     }))
   }
 
-  const mockNewsItems = [
-    { id: 1, time: "2小时前", title: "人工智能新突破", hasImage: true },
-    { id: 2, time: "2小时前", title: "科技创新发展", hasImage: false },
-    { id: 3, time: "4小时前", title: "市场动态分析", hasImage: true },
-    { id: 4, time: "6小时前", title: "政策解读报告", hasImage: false },
-  ]
+  // No more mock data - using real data from useNewsletter hook
 
   return (
     <div className="flex h-screen w-full max-w-[1512px] mx-auto bg-[var(--surface-third)]">
@@ -106,7 +103,17 @@ export default function HomePage() {
           {/* Section 1: Today's Discovery */}
           <section className="discovery-section">
             <h2 className="text-lg font-medium text-[var(--text)] mb-4">今日发现</h2>
-            <ExpandableCard title="今日发现" />
+            {newsletterLoading ? (
+              <div className="text-center py-8 text-[var(--text-secondary)]">
+                加载中...
+              </div>
+            ) : newsletterError ? (
+              <div className="text-center py-8 text-red-500">
+                加载失败: {newsletterError}
+              </div>
+            ) : (
+              <ExpandableCard title="今日发现" newsletter={newsletter} />
+            )}
           </section>
 
 
@@ -145,7 +152,7 @@ export default function HomePage() {
                 <KanbanColumn 
                   key={index} 
                   category={category} 
-                  newsItems={loading ? mockNewsItems : getNewsItemsForCategory(category)} 
+                  newsItems={headlinesLoading ? [] : getNewsItemsForCategory(category)} 
                 />
               ))}
             </div>

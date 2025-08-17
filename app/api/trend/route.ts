@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
+import { FALLBACK_DATA } from "@/config/fallbackData";
+import { CATEGORIES } from "@/config/categories";
 
 export async function GET(req: NextRequest) {
   try {
@@ -16,8 +18,7 @@ export async function GET(req: NextRequest) {
     
     console.log("API key found, length:", process.env.DEEPSEEK_API_KEY.length);
 
-        // For simple text generation, use direct LLM call instead of Eko
-    // This avoids the agent system entirely
+    // For simple text generation, use DeepSeek API directly
     const openai = new OpenAI({
       apiKey: process.env.DEEPSEEK_API_KEY,
       baseURL: "https://api.deepseek.com/v1",
@@ -74,15 +75,7 @@ export async function GET(req: NextRequest) {
         console.error("OpenAI returned error:", result.error);
         
         // Return fallback data with error details
-        const fallbackData = {
-          title: "变动中的世界，视角决定答案",
-          subtitle: "今日焦点：社会变革、芯片竞赛、全球货币新秩序",
-          bullets: [
-            { id: "society", tagline: "年轻人涌向\"三线城市\"" },
-            { id: "tech", tagline: "国产 3nm AI 芯片面世" },
-            { id: "economy", tagline: "数字人民币跨境试点扩容" }
-          ]
-        };
+        const fallbackData = FALLBACK_DATA.trends;
         
         return NextResponse.json({
           success: true,
@@ -139,15 +132,7 @@ export async function GET(req: NextRequest) {
         if (!parsedResult) {
           // If parsing fails, return mock data as fallback
           console.log("Returning fallback mock data due to parsing error");
-          const fallbackData = {
-            title: "变动中的世界，视角决定答案",
-            subtitle: "今日焦点：社会变革、芯片竞赛、全球货币新秩序",
-            bullets: [
-              { id: "society", tagline: "年轻人涌向\"三线城市\"" },
-              { id: "tech", tagline: "国产 3nm AI 芯片面世" },
-              { id: "economy", tagline: "数字人民币跨境试点扩容" }
-            ]
-          };
+          const fallbackData = FALLBACK_DATA.trends;
           
           return NextResponse.json({
             success: true,
@@ -180,15 +165,7 @@ export async function GET(req: NextRequest) {
       
       // Return fallback data if OpenAI fails
       console.log("Returning fallback mock data due to OpenAI error");
-      const fallbackData = {
-        title: "变动中的世界，视角决定答案",
-        subtitle: "今日焦点：社会变革、芯片竞赛、全球货币新秩序",
-          bullets: [
-            { id: "society", tagline: "年轻人涌向\"三线城市\"" },
-            { id: "tech", tagline: "国产 3nm AI 芯片面世" },
-            { id: "economy", tagline: "数字人民币跨境试点扩容" }
-          ]
-        };
+      const fallbackData = FALLBACK_DATA.trends;
         
         return NextResponse.json({
           success: true,

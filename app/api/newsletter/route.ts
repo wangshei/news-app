@@ -1,4 +1,27 @@
+// This endpoint builds and caches the daily newsletter from RSS feeds and HTML sources, with DeepSeek summarization.
 import { NextRequest, NextResponse } from "next/server";
+import { CATEGORIES } from "@/config/categories";
+import { NEWS_SOURCES } from "@/config/newsSources";
+import { FALLBACK_DATA } from "@/config/fallbackData";
+import OpenAI from "openai";
+import * as cheerio from 'cheerio';
+
+
+
+// In-memory cache for today's newsletter
+const cache: Record<string, DailyNewsletter> = {};
+
+// Timeout constants
+const PER_SOURCE_TIMEOUT_MS = 8_000;   // 8 seconds per source
+const ROUTE_TIMEOUT_MS = 25_000;       // 25 seconds total route timeout (increased from 15s)
+const RECENT_MS = 24 * 60 * 60 * 1000; // 12 hours for recency filter (relaxed from 4h)
+
+interface NewsSource {
+  name: string;
+  url: string;
+  rss?: boolean;
+  selector?: string;
+}
 
 interface Headline {
   id: string;
@@ -8,7 +31,7 @@ interface Headline {
   timestamp: string;
 }
 
-interface TrendBrief {
+interface Trend {
   id: string;
   title: string;
   summary: string;
@@ -21,103 +44,450 @@ interface DailyNewsletter {
   title: string;
   subtitle: string;
   date: string;
-  briefs: TrendBrief[];
+  trends: Trend[];
 }
 
 export async function GET(req: NextRequest) {
   try {
     console.log("Newsletter API called");
     
-    // TODO: replace headlines mock with BrowserAgent scraping
-    const newsletter: DailyNewsletter = {
-      id: "daily-" + new Date().toISOString().split('T')[0],
-      title: "变动中的世界，视角决定答案",
-      subtitle: "今日焦点：社会变革、芯片竞赛、全球货币新秩序",
-      date: new Date().toISOString().split('T')[0],
-      briefs: [
-        {
-          id: 'society',
-          title: '年轻人涌向"三线城市"',
-          summary: '年轻人涌向"三线城市"',
-          category: '社会',
-          headlines: [
-            {
-              id: "soc-1",
-              title: "一线城市房租上涨20%，年轻人压力倍增",
-              source: "财经网",
-              url: "https://example.com/soc-1",
-              timestamp: "2024-01-15T10:00:00Z"
-            },
-            {
-              id: "soc-2", 
-              title: "三线城市人才政策优惠力度加大",
-              source: "人民网",
-              url: "https://example.com/soc-2",
-              timestamp: "2024-01-15T10:30:00Z"
-            }
-          ]
-        },
-        {
-          id: 'tech',
-          title: '国产 3nm AI 芯片面世',
-          summary: '国产 3nm AI 芯片面世',
-          category: '科技',
-          headlines: [
-            {
-              id: "tech-1",
-              title: "华为发布麒麟9000S芯片，性能提升40%",
-              source: "科技日报",
-              url: "https://example.com/tech-1",
-              timestamp: "2024-01-15T11:15:00Z"
-            },
-            {
-              id: "tech-2",
-              title: "中芯国际3nm工艺突破技术瓶颈",
-              source: "半导体观察",
-              url: "https://example.com/tech-2", 
-              timestamp: "2024-01-15T11:45:00Z"
-            }
-          ]
-        },
-        {
-          id: 'economy',
-          title: '数字人民币跨境试点扩容',
-          summary: '数字人民币跨境试点扩容',
-          category: '经济',
-          headlines: [
-            {
-              id: "eco-1",
-              title: "数字人民币在港试点，交易量突破1000万",
-              source: "金融时报",
-              url: "https://example.com/eco-1",
-              timestamp: "2024-01-15T12:00:00Z"
-            },
-            {
-              id: "eco-2",
-              title: "新加坡加入数字人民币跨境支付网络",
-              source: "经济参考报",
-              url: "https://example.com/eco-2",
-              timestamp: "2024-01-15T12:30:00Z"
-            }
-          ]
-        }
-      ]
-    };
-
-    return NextResponse.json({
-      success: true,
-      data: newsletter,
-      timestamp: new Date().toISOString()
+    // Check if API key is configured
+    if (!process.env.DEEPSEEK_API_KEY) {
+      console.error("DEEPSEEK_API_KEY not configured");
+      return NextResponse.json(
+        { error: "DEEPSEEK_API_KEY environment variable not configured" },
+        { status: 500 }
+      );
+    }
+    
+    // Check cache first
+    const today = new Date().toISOString().slice(0,10);
+    if (cache[today] && !req.nextUrl.searchParams.get("force")) {
+      console.log("Returning cached newsletter for:", today);
+      return NextResponse.json(cache[today]);
+    }
+    
+    console.log("Building fresh newsletter for:", today);
+    
+    // Initialize OpenAI for DeepSeek
+    const openai = new OpenAI({
+      apiKey: process.env.DEEPSEEK_API_KEY,
+      baseURL: "https://api.deepseek.com/v1",
+      defaultHeaders: {
+        "Content-Type": "application/json",
+      },
     });
+    
+    // Timeout wrapper for individual source fetching
+    async function fetchWithTimeout(promise: Promise<any>, sourceName: string) {
+      return Promise.race([
+        promise,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error(`TIMEOUT ${sourceName}`)), PER_SOURCE_TIMEOUT_MS)
+        )
+      ]);
+    }
+    
+    // Main newsletter building function
+    async function buildNewsletter() {
+      const trends: Trend[] = [];
+      
+      // Process each category
+      for (const category of CATEGORIES) {
+        console.log(`Processing category: ${category}`);
+        
+        const categoryHeadlines: Headline[] = [];
+        const sources: NewsSource[] = NEWS_SOURCES[category as keyof typeof NEWS_SOURCES] || [];
+        
+        // Fetch headlines from each source in the category
+        for (const source of sources) {
+          try {
+            console.log(`Fetching from ${source.name}: ${source.url}`);
+            
+            let headlines: Headline[] = [];
+            
+            if (source.rss) {
+              // Fetch RSS feed
+              try {
+                headlines = await fetchWithTimeout(fetchRSSHeadlines(source, category), source.name);
+                console.log(`[NEWSLETTER] OK ${source.name} - ${headlines.length} headlines`);
+              } catch (rssError) {
+                console.warn(`[NEWSLETTER] FAIL ${source.name}:`, rssError instanceof Error ? rssError.message : String(rssError));
+                continue;
+              }
+            } else {
+              // Fetch HTML and parse with Cheerio
+              try {
+                headlines = await fetchWithTimeout(fetchHTMLHeadlines(source, category), source.name);
+                console.log(`[NEWSLETTER] OK ${source.name} - ${headlines.length} headlines`);
+              } catch (htmlError) {
+                console.warn(`[NEWSLETTER] FAIL ${source.name}:`, htmlError instanceof Error ? htmlError.message : String(htmlError));
+                continue;
+              }
+            }
+            
+            // Filter headlines by timestamp (keep only items published ≤12 hours ago)
+            const twelveHoursAgo = new Date(Date.now() - RECENT_MS);
+            const recentHeadlines = headlines.filter(h => {
+              const headlineTime = new Date(h.timestamp);
+              return headlineTime >= twelveHoursAgo;
+            });
+            
+            categoryHeadlines.push(...recentHeadlines);
+            
+          } catch (sourceError) {
+            console.warn(`[NEWSLETTER] FAIL ${source.name}:`, sourceError instanceof Error ? sourceError.message : String(sourceError));
+            continue;
+          }
+        }
+        
+        // Deduplicate and score headlines
+        const processedHeadlines = processHeadlines(categoryHeadlines);
+        
+        // If deduplication returns empty, keep up to 5 original headlines
+        const finalHeadlines = processedHeadlines.length > 0 ? processedHeadlines : categoryHeadlines.slice(0, 5);
+        
+        // Generate trend summary for this category using DeepSeek
+        let categoryTitle = "";
+        let categorySummary = "";
+        
+        try {
+          const titles = finalHeadlines.slice(0, 5).map(h => h.title).join('\n');
+          const summaryPrompt = `以下是${category}领域最新头条：\n${titles}\n请给出一句trend标题和40字简体中文概要，返回JSON {title,summary}`;
 
+          const summaryResult = await openai.chat.completions.create({
+            model: "deepseek-chat",
+            messages: [{ role: "user", content: summaryPrompt }],
+            max_tokens: 300,
+            temperature: 0.7,
+            top_p: 0.9
+          });
+          
+          let summaryContent = summaryResult.choices[0]?.message?.content;
+          if (summaryContent) {
+            // Clean and parse summary
+            let cleanContent = summaryContent.trim();
+            if (cleanContent.startsWith('```json')) {
+              cleanContent = cleanContent.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+            }
+            if (cleanContent.startsWith('```')) {
+              cleanContent = cleanContent.replace(/^```\s*/, '').replace(/\s*```$/, '');
+            }
+            
+            try {
+              const parsed = JSON.parse(cleanContent);
+              categoryTitle = parsed.title || `Default ${category} title`;
+              categorySummary = parsed.summary || `Default ${category} summary`;
+              
+              console.log(`✅ Successfully generated summary for ${category}:`, { title: categoryTitle, summary: categorySummary });
+            } catch (parseError) {
+              console.error(`Failed to parse summary for ${category}:`, parseError);
+              categoryTitle = `Default ${category} title`;
+              categorySummary = `Default ${category} summary`;
+            }
+          }
+        } catch (summaryError) {
+          console.error(`Failed to generate summary for ${category}:`, summaryError);
+          categoryTitle = `Default ${category} title`;
+          categorySummary = `Default ${category} summary`;
+        }
+        
+        // Add category trend
+        trends.push({
+          id: category,
+          title: categoryTitle,
+          summary: categorySummary,
+          category: getCategoryDisplayName(category),
+          headlines: finalHeadlines.length > 0 ? finalHeadlines : [{
+            id: `${category}-fallback`,
+            title: `Fallback headline for ${category}`,
+            source: "Fallback Data",
+            url: `https://example.com/${category}-fallback`,
+            timestamp: new Date().toISOString()
+          }]
+        });
+        
+        console.log(`✅ Successfully processed category ${category} with ${finalHeadlines.length} headlines`);
+      }
+      
+      // Generate overall title and subtitle using DeepSeek
+      let overallTitle = "";
+      let overallSubtitle = "";
+      
+      try {
+        const trendTitles = trends.map(t => t.title).join('\n');
+        const overallPrompt = `基于以下三个类别的趋势，生成简体中文整体的标题和副标题：
+
+社会类：${trends.find(t => t.id === 'society')?.title || 'N/A'}
+科技类：${trends.find(t => t.id === 'tech')?.title || 'N/A'}
+经济类：${trends.find(t => t.id === 'economy')?.title || 'N/A'}
+
+要求：
+1. title: 一句话概括今天三大类的共同趋势，20字以内
+2. subtitle: 更长的描述，40-60字
+
+请用严格的JSON格式返回：
+{
+  "title": "整体标题",
+  "subtitle": "整体副标题"
+}`;
+
+        const overallResult = await openai.chat.completions.create({
+          model: "deepseek-chat",
+          messages: [{ role: "user", content: overallPrompt }],
+          max_tokens: 300,
+          temperature: 0.7,
+          top_p: 0.9
+        });
+        
+        let overallContent = overallResult.choices[0]?.message?.content;
+        if (overallContent) {
+          // Clean and parse overall summary
+          let cleanContent = overallContent.trim();
+          if (cleanContent.startsWith('```json')) {
+            cleanContent = cleanContent.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+          }
+          if (cleanContent.startsWith('```')) {
+            cleanContent = cleanContent.replace(/^```\s*/, '').replace(/\s*```$/, '');
+          }
+          
+          try {
+            const parsed = JSON.parse(cleanContent);
+            overallTitle = parsed.title || "变动中的世界，视角决定答案";
+            overallSubtitle = parsed.subtitle || "今日焦点：社会变革、芯片竞赛、全球货币新秩序";
+            
+            console.log(`✅ Successfully generated overall summary:`, { title: overallTitle, subtitle: overallSubtitle });
+          } catch (parseError) {
+            console.error("Failed to parse overall summary:", parseError);
+            overallTitle = "变动中的世界，视角决定答案";
+            overallSubtitle = "今日焦点：社会变革、芯片竞赛、全球货币新秩序";
+          }
+        }
+      } catch (overallError) {
+        console.error("Failed to generate overall summary:", overallError);
+        overallTitle = "变动中的世界，视角决定答案";
+        overallSubtitle = "今日焦点：社会变革、芯片竞赛、全球货币新秩序";
+      }
+      
+      // Build the newsletter
+      const newsletter: DailyNewsletter = {
+        id: "daily-" + new Date().toISOString().split('T')[0],
+        title: overallTitle,
+        subtitle: overallSubtitle,
+        date: new Date().toISOString().split('T')[0],
+        trends: trends
+      };
+      
+      // Log headline counts per category before caching
+      console.log(`📊 Newsletter built with headlines per category:`);
+      trends.forEach(trend => {
+        console.log(`  ${trend.category}: ${trend.headlines.length} headlines`);
+      });
+      
+      // Cache the newsletter for today
+      cache[today] = newsletter;
+      console.log("Newsletter built and cached for:", today);
+      
+
+      
+      return newsletter;
+    }
+    
+    // Remove the overall route timeout wrapper - rely only on per-source timeouts
+    try {
+      const result = await buildNewsletter();
+      return NextResponse.json(result);
+    } catch (error) {
+      console.error("Newsletter build failed:", error);
+      
+      // Return fallback data with error note
+      const fallbackNewsletter: DailyNewsletter = {
+        id: "daily-fallback-" + new Date().toISOString().split('T')[0],
+        ...FALLBACK_DATA.newsletter,
+        date: new Date().toISOString().split('T')[0]
+      };
+      
+      return NextResponse.json({
+        ...fallbackNewsletter,
+        note: `newsletter fallback: ${error instanceof Error ? error.message : String(error)}`
+      });
+    }
+    
   } catch (error) {
-    console.error("Error fetching newsletter:", error);
+    console.error("Error building newsletter:", error);
+    
     return NextResponse.json(
       { 
-        error: "Failed to fetch newsletter data",
+        error: "Failed to build newsletter",
         details: error instanceof Error ? error.message : "Unknown error"
       },
       { status: 500 }
     );
   }
+}
+
+// Fetch headlines from RSS feed
+async function fetchRSSHeadlines(source: NewsSource, category: string): Promise<Headline[]> {
+  try {
+    const response = await fetch(source.url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
+    const xmlText = await response.text();
+    const $ = cheerio.load(xmlText, { xmlMode: true });
+    
+    const headlines: Headline[] = [];
+    const items = $('item').slice(0, 5);
+    
+    items.each((index, element) => {
+      const $item = $(element);
+      const title = $item.find('title').text().trim();
+      const link = $item.find('link').text().trim();
+      const pubDate = $item.find('pubDate').text().trim();
+      
+      if (title && link) {
+        // Handle missing or unparseable pubDate - treat as "now"
+        let timestamp = new Date().toISOString();
+        if (pubDate) {
+          try {
+            // Try to parse the pubDate, but don't fail if it's invalid
+            const parsedDate = new Date(pubDate);
+            if (!isNaN(parsedDate.getTime())) {
+              timestamp = parsedDate.toISOString();
+            }
+            // If parsing fails, timestamp remains as "now"
+          } catch (dateError) {
+            // Use current time if date parsing fails
+            console.warn(`Could not parse pubDate for ${source.name}: ${pubDate}`);
+          }
+        }
+        
+        headlines.push({
+          id: `${category}-${source.name}-${index}`,
+          title,
+          source: source.name,
+          url: link,
+          timestamp
+        });
+      }
+    });
+    
+    return headlines;
+    
+  } catch (error) {
+    throw new Error(`RSS fetching failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+// Fetch headlines from HTML using Cheerio
+async function fetchHTMLHeadlines(source: NewsSource, category: string): Promise<Headline[]> {
+  try {
+    const response = await fetch(source.url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
+    const html = await response.text();
+    const $ = cheerio.load(html);
+    
+    const headlines: Headline[] = [];
+    const elements = $(source.selector).slice(0, 5);
+    
+    elements.each((index, element) => {
+      const $el = $(element);
+      const title = $el.text().trim();
+      let url = $el.attr('href') || '';
+      
+      // Handle relative URLs
+      if (url && !url.startsWith('http')) {
+        try {
+          const baseUrl = new URL(source.url);
+          url = new URL(url, baseUrl).href;
+        } catch (urlError) {
+          console.warn(`Invalid URL for ${source.name}:`, url);
+          url = '';
+        }
+      }
+      
+      if (title && url) {
+        headlines.push({
+          id: `${category}-${source.name}-${index}`,
+          title,
+          source: source.name,
+          url,
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
+    
+    return headlines;
+    
+  } catch (error) {
+    throw new Error(`HTML fetching failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+// Process and deduplicate headlines
+function processHeadlines(headlines: Headline[]): Headline[] {
+  // Normalize titles for deduplication
+  const normalizeTitle = (title: string): string => {
+    return title.toLowerCase()
+      .replace(/[^\w\s\u4e00-\u9fff]/g, '') // Remove punctuation, keep Chinese characters
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .trim();
+  };
+  
+  // Group headlines by normalized title
+  const headlineGroups = new Map<string, Headline[]>();
+  
+  headlines.forEach(headline => {
+    const normalizedTitle = normalizeTitle(headline.title);
+    if (!headlineGroups.has(normalizedTitle)) {
+      headlineGroups.set(normalizedTitle, []);
+    }
+    headlineGroups.get(normalizedTitle)!.push(headline);
+  });
+  
+  // Convert groups to deduplicated headlines
+  const deduplicatedHeadlines: Headline[] = Array.from(headlineGroups.entries()).map(([normalizedTitle, group]) => {
+    // Use the first headline as the base
+    const base = group[0];
+    
+    // Find the most recent timestamp
+    const timestamps = group.map(h => new Date(h.timestamp).getTime());
+    const mostRecentTimestamp = new Date(Math.max(...timestamps)).toISOString();
+    
+    return {
+      ...base,
+      timestamp: mostRecentTimestamp
+    };
+  });
+  
+  // Rank by timestamp (most recent first) and take top 5
+  deduplicatedHeadlines.sort((a, b) => 
+    new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+  );
+  
+  return deduplicatedHeadlines.slice(0, 5);
+}
+
+// Helper function to get Chinese category names
+function getCategoryDisplayName(category: string): string {
+  const categoryNames: { [key: string]: string } = {
+    society: '社会',
+    tech: '科技',
+    economy: '经济'
+  };
+  return categoryNames[category] || category;
 }

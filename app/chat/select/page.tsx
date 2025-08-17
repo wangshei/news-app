@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ArrowLeft, MessageCircle } from "lucide-react"
 import { getCategoryColor } from "@/utils/categoryColors"
+import { useNewsletter } from "@/hooks/useNewsletter"
+import { CATEGORIES } from "@/config/categories"
 
 interface Headline {
   id: string;
@@ -15,7 +17,7 @@ interface Headline {
   timestamp: string;
 }
 
-interface TrendBrief {
+interface Trend {
   id: string;
   title: string;
   summary: string;
@@ -28,89 +30,26 @@ interface DailyNewsletter {
   title: string;
   subtitle: string;
   date: string;
-  briefs: TrendBrief[];
+  trends: Trend[];
 }
 
-export default function TrendSelectionPage() {
+export default function TopicSelectPage() {
   const router = useRouter()
-  const [newsletter, setNewsletter] = useState<DailyNewsletter | null>(null)
-  const [loading, setLoading] = useState(true)
-
+  
+  // Use the centralized newsletter hook
+  const { newsletter, loading, error } = useNewsletter()
+  
+  // Runtime sanity check
   useEffect(() => {
-    fetchNewsletter()
-  }, [])
-
-  const fetchNewsletter = async () => {
-    try {
-      const response = await fetch('/api/newsletter')
-      if (!response.ok) {
-        throw new Error('Failed to fetch newsletter')
-      }
-      
-      const result = await response.json()
-      if (result.success && result.data) {
-        setNewsletter(result.data)
-      }
-    } catch (error) {
-      console.error('Error fetching newsletter:', error)
-      // Fallback data
-      setNewsletter({
-        id: "daily-fallback",
-        title: "变动中的世界，视角决定答案",
-        subtitle: "今日焦点：社会变革、芯片竞赛、全球货币新秩序",
-        date: new Date().toISOString().split('T')[0],
-        briefs: [
-          {
-            id: 'society',
-            title: '年轻人涌向"三线城市"',
-            summary: '年轻人涌向"三线城市"',
-            category: '社会',
-            headlines: [
-              {
-                id: "soc-1",
-                title: "一线城市房租上涨20%，年轻人压力倍增",
-                source: "财经网",
-                url: "https://example.com/soc-1",
-                timestamp: "2024-01-15T10:00:00Z"
-              }
-            ]
-          },
-          {
-            id: 'tech',
-            title: '国产 3nm AI 芯片面世',
-            summary: '国产 3nm AI 芯片面世',
-            category: '科技',
-            headlines: [
-              {
-                id: "tech-1",
-                title: "华为发布麒麟9000S芯片，性能提升40%",
-                source: "科技日报",
-                url: "https://example.com/tech-1",
-                timestamp: "2024-01-15T11:15:00Z"
-              }
-            ]
-          },
-          {
-            id: 'economy',
-            title: '数字人民币跨境试点扩容',
-            summary: '数字人民币跨境试点扩容',
-            category: '经济',
-            headlines: [
-              {
-                id: "eco-1",
-                title: "数字人民币在港试点，交易量突破1000万",
-                source: "金融时报",
-                url: "https://example.com/eco-1",
-                timestamp: "2024-01-15T12:00:00Z"
-              }
-            ]
-          }
-        ]
-      })
-    } finally {
-      setLoading(false)
+    if (newsletter?.trends) {
+      console.assert(
+        newsletter.trends.length === CATEGORIES.length,
+        "Newsletter trends mismatch"
+      );
     }
-  }
+  }, [newsletter]);
+
+
 
   const handleTrendSelect = () => {
     // Pass the entire newsletter object via router state if easier
@@ -121,12 +60,23 @@ export default function TrendSelectionPage() {
     router.push('/')
   }
 
-  if (loading || !newsletter) {
+  if (loading) {
     return (
       <div className="min-h-screen bg-[var(--surface)] flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[var(--accent)] mx-auto mb-4"></div>
           <p className="text-[var(--text-secondary)]">加载中...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error || !newsletter?.trends) {
+    return (
+      <div className="min-h-screen bg-[var(--surface)] flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-[var(--text-secondary)]">无法加载话题数据</p>
+          {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
         </div>
       </div>
     )
@@ -172,14 +122,14 @@ export default function TrendSelectionPage() {
             
             {/* Topics List with Headlines */}
             <div className="space-y-6 mb-8">
-              {newsletter.briefs.map((trend) => (
+              {newsletter.trends.map((trend: Trend) => (
                 <div key={trend.id} className="space-y-3">
                   <div className="flex items-start space-x-3">
                     <span className={`px-2 rounded-full text-xs font-medium ${getCategoryColor(trend.category)} mt-1`}>
                       {trend.category}
                     </span>
                     <div className="flex-1">
-                      <h3 className="font-medium text-[var(--text)] mb-1">
+                      <h3 className="text-sm font-medium text-[var(--text)] mb-1">
                         {trend.title}
                       </h3>
                       <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
@@ -190,7 +140,7 @@ export default function TrendSelectionPage() {
                   
                   {/* Headlines as Display Only */}
                   <div className="flex flex-wrap gap-2 ml-12">
-                    {trend.headlines.map((headline) => (
+                    {trend.headlines.map((headline: Headline) => (
                       <span
                         key={headline.id}
                         className="rounded-sm bg-[var(--surface-alt)] text-[var(--text)] px-3 py-1 text-xs"

@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ArrowLeft, MessageCircle, RotateCcw, User, Bot, ChevronDown, ChevronUp, ArrowRight, ArrowLeftCircle, ArrowRightCircle } from "lucide-react"
 import { getCategoryColor, getCategoryBackgroundColor } from "@/utils/categoryColors"
+import { useNewsletter } from "@/hooks/useNewsletter"
+import { CATEGORIES } from "@/config/categories"
 
 interface Headline {
   id: string;
@@ -16,19 +18,20 @@ interface Headline {
   timestamp: string;
 }
 
-interface TrendDetail {
+interface Trend {
   id: string;
   title: string;
   summary: string;
-  description: string;
   category: string;
-  sources: Array<{
-    id: string;
-    name: string;
-    quote: string;
-    url: string;
-  }>;
   headlines: Headline[];
+}
+
+interface DailyNewsletter {
+  id: string;
+  title: string;
+  subtitle: string;
+  date: string;
+  trends: Trend[];
 }
 
 interface ChatMessage {
@@ -45,65 +48,118 @@ export default function ChatSessionPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   
   const [currentIdx, setCurrentIdx] = useState(topicIdx)
-  const [topics, setTopics] = useState<TrendDetail[]>([])
   const [history, setHistory] = useState<ChatMessage[]>([])
-  const [loading, setLoading] = useState(true)
   const [inputValue, setInputValue] = useState('')
   const [isLoadingResponse, setIsLoadingResponse] = useState(false)
   const [newsletterExpanded, setNewsletterExpanded] = useState(false)
-
-  const suggestedQuestions = ["探索事件起源", "预测近期影响", "探讨未来走向"]
-
+  const [followUpQuestions, setFollowUpQuestions] = useState<string[]>([
+    "探索事件起源", "预测近期影响", "探讨未来走向"
+  ])
+  const [suggest, setSuggest] = useState<string[]>([])
+  const [isInitializing, setIsInitializing] = useState(false)
+  
+  // Use the centralized newsletter hook
+  const { newsletter, loading, error } = useNewsletter()
+  
+  // Runtime sanity check
   useEffect(() => {
-    fetchTopics()
-  }, [])
-
-  useEffect(() => {
-    if (topics.length > 0 && currentIdx < topics.length) {
-      seedHistory()
+    if (newsletter?.trends) {
+      console.assert(
+        newsletter.trends.length === CATEGORIES.length,
+        "Newsletter trends mismatch"
+      );
     }
-  }, [topics, currentIdx])
+  }, [newsletter]);
+
+  // Start with empty history for each topic - no more seedHistory
+  useEffect(() => {
+    if (newsletter?.trends && newsletter.trends.length > 0 && currentIdx < newsletter.trends.length) {
+      setHistory([]) // Start with empty history for each topic
+      setFollowUpQuestions(["探索事件起源", "预测近期影响", "探讨未来走向"]) // Reset to default questions
+      setSuggest([]) // Reset suggestions
+      setIsInitializing(false) // Reset initialization state
+      
+      // Initialize with AI-generated suggestions for the current trend
+      initializeTrendSuggestions()
+    }
+  }, [newsletter, currentIdx])
+
+  // Initialize AI-generated suggestions for the current trend
+  const initializeTrendSuggestions = async () => {
+    if (!newsletter?.trends || currentIdx >= newsletter.trends.length) return
+    
+    const currentTrend = newsletter.trends[currentIdx]
+    console.log("[INIT] Initializing suggestions for trend:", currentTrend.id)
+    setIsInitializing(true)
+    
+    try {
+      // First, get the expert description
+      const expertResponse = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          topicId: currentTrend.id,
+          question: "请以专家视角总结这个趋势的背景、现状和重要性",
+          history: [],
+          init: true
+        })
+      })
+      
+      if (expertResponse.ok) {
+        const expertResult = await expertResponse.json()
+        if (expertResult.data?.answer) {
+          // Add expert system message to history
+          const expertMessage: ChatMessage = {
+            id: `expert-${Date.now()}`,
+            role: 'system',
+            content: expertResult.data.answer,
+            timestamp: new Date()
+          }
+          setHistory([expertMessage])
+          console.log("[INIT] Expert description added:", expertResult.data.answer)
+        }
+      }
+      
+      // Then, get the initial suggestions
+      const suggestionsResponse = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          topicId: currentTrend.id,
+          question: "", // Empty question for initialization
+          history: [],
+          init: true // Flag to indicate initialization
+        })
+      })
+      
+      if (suggestionsResponse.ok) {
+        const suggestionsResult = await suggestionsResponse.json()
+        if (suggestionsResult.data?.nextQuestions && Array.isArray(suggestionsResult.data.nextQuestions)) {
+          setSuggest(suggestionsResult.data.nextQuestions)
+          console.log("[INIT] Generated suggestions:", suggestionsResult.data.nextQuestions)
+        }
+      }
+    } catch (error) {
+      console.error('[INIT] Failed to initialize suggestions:', error)
+      // Fall back to default suggestions
+      setSuggest(["探索事件起源", "预测近期影响", "探讨未来走向"])
+    } finally {
+      setIsInitializing(false)
+    }
+  }
 
   useEffect(() => {
     scrollToBottom()
   }, [history])
 
-  const fetchTopics = async () => {
-    try {
-      // Fetch all three topics
-      const topicIds = ['society', 'tech', 'economy']
-      const topicPromises = topicIds.map(id => 
-        fetch(`/api/newsletter/${id}`).then(res => res.json())
-      )
-      
-      const results = await Promise.all(topicPromises)
-      const validTopics = results
-        .filter(result => result.success)
-        .map(result => result.data)
-      
-      setTopics(validTopics)
-    } catch (error) {
-      console.error('Error fetching topics:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const seedHistory = () => {
-    if (topics.length === 0 || currentIdx >= topics.length) return
-    
-    const trend = topics[currentIdx]
-    const newsletterTitle = "变动中的世界，视角决定答案"
-    const newsletterSubtitle = "今日焦点：社会变革、芯片竞赛、全球货币新秩序"
-    
-    // No seeded history - we'll show newsletter context as a card
-    setHistory([])
-  }
-
   const sendQuestion = async (question: string) => {
-    if (topics.length === 0 || currentIdx >= topics.length) return
+    if (!newsletter?.trends || newsletter.trends.length === 0 || currentIdx >= newsletter.trends.length) return
     
-    const trend = topics[currentIdx]
+    const trend = newsletter.trends[currentIdx]
     
     // Add user message
     const userMessage: ChatMessage = {
@@ -116,8 +172,10 @@ export default function ChatSessionPage() {
     setHistory(prev => [...prev, userMessage])
     setIsLoadingResponse(true)
     
+    // Console log for debugging
+    console.log("[SEND]", question);
+    
     try {
-      // TODO: replace chat placeholder with real Eko call
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
@@ -132,20 +190,43 @@ export default function ChatSessionPage() {
       
       if (response.ok) {
         const result = await response.json()
+        
+        // Update follow-up questions with dynamic ones from the API
+        if (result.data?.nextQuestions && Array.isArray(result.data.nextQuestions)) {
+          setFollowUpQuestions(result.data.nextQuestions)
+          setSuggest(result.data.nextQuestions || [])
+        }
+        
         const systemMessage: ChatMessage = {
           id: `system-${Date.now()}`,
           role: 'system',
-          content: result.data?.answer || "(AI 回答占位符…)",
+          content: result.data?.answer || "抱歉，暂时无法回答。",
           timestamp: new Date()
         }
         setHistory(prev => [...prev, systemMessage])
+        
+        // Console logs for debugging
+        console.log("[RECV answer]", result.data?.answer);
+        console.log("[RECV next]", result.data?.nextQuestions);
+      } else {
+        // Handle API error response
+        const errorData = await response.json().catch(() => ({}))
+        console.error('[CHAT] API error:', response.status, errorData)
+        
+        const errorMessage: ChatMessage = {
+          id: `system-${Date.now()}`,
+          role: 'system',
+          content: `抱歉，服务器返回错误 (${response.status})。请稍后再试。`,
+          timestamp: new Date()
+        }
+        setHistory(prev => [...prev, errorMessage])
       }
     } catch (error) {
       console.error('Error sending question:', error)
       const errorMessage: ChatMessage = {
         id: `system-${Date.now()}`,
         role: 'system',
-        content: "抱歉，处理您的问题时出现了错误。",
+        content: "抱歉，网络连接出现问题。请检查网络连接后重试。",
         timestamp: new Date()
       }
       setHistory(prev => [...prev, errorMessage])
@@ -155,9 +236,14 @@ export default function ChatSessionPage() {
   }
 
   const handleNextTopic = () => {
-    if (currentIdx < topics.length - 1) {
+    if (!newsletter?.trends) return
+    
+    if (currentIdx < newsletter.trends.length - 1) {
       setCurrentIdx(prev => prev + 1)
       setHistory([]) // Clear history for new topic
+      setFollowUpQuestions(["探索事件起源", "预测近期影响", "探讨未来走向"]) // Reset questions
+      setSuggest([]) // Reset suggestions
+      setIsInitializing(false) // Reset initialization state
     } else {
       // All topics completed
       const completionMessage: ChatMessage = {
@@ -174,6 +260,9 @@ export default function ChatSessionPage() {
     if (currentIdx > 0) {
       setCurrentIdx(prev => prev - 1)
       setHistory([]) // Clear history for new topic
+      setFollowUpQuestions(["探索事件起源", "预测近期影响", "探讨未来走向"]) // Reset questions
+      setSuggest([]) // Reset suggestions
+      setIsInitializing(false) // Reset initialization state
     }
   }
 
@@ -184,6 +273,9 @@ export default function ChatSessionPage() {
   const handleBack = () => {
     router.push('/chat/select')
   }
+
+  // Check if user can proceed to next topic
+  const canProceedToNextTopic = history.length > 2 && !isLoadingResponse && suggest.length === 0
 
   if (loading) {
     return (
@@ -196,18 +288,19 @@ export default function ChatSessionPage() {
     )
   }
 
-  if (topics.length === 0) {
+  if (error || !newsletter?.trends) {
     return (
       <div className="min-h-screen bg-[var(--surface)] flex items-center justify-center">
         <div className="text-center">
           <p className="text-[var(--text-secondary)]">无法加载话题数据</p>
+          {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
         </div>
       </div>
     )
   }
 
-  const currentTopic = topics[currentIdx]
-  const isLastTopic = currentIdx === topics.length - 1
+  const currentTopic = newsletter.trends[currentIdx]
+  const isLastTopic = currentIdx === newsletter.trends.length - 1
 
   return (
     <div className="min-h-screen bg-[var(--surface)] flex flex-col">
@@ -220,7 +313,7 @@ export default function ChatSessionPage() {
               返回选择
             </Button>
             <div className="text-sm text-[var(--text-secondary)]">
-              话题 {currentIdx + 1} / {topics.length}: {currentTopic.category}
+              话题 {currentIdx + 1} / {newsletter.trends.length}: {currentTopic.category}
             </div>
           </div>
           
@@ -231,8 +324,8 @@ export default function ChatSessionPage() {
               onClick={() => setNewsletterExpanded(!newsletterExpanded)}
             >
               <div>
-                <h3 className="font-medium text-[var(--text)]">变动中的世界，视角决定答案</h3>
-                <p className="text-sm text-[var(--text-secondary)]">今日焦点：社会变革、芯片竞赛、全球货币新秩序</p>
+                <h3 className="font-medium text-[var(--text)]">{newsletter.title}</h3>
+                <p className="text-sm text-[var(--text-secondary)]">{newsletter.subtitle}</p>
               </div>
               {newsletterExpanded ? (
                 <ChevronUp className="w-5 h-5 text-[var(--text-secondary)]" />
@@ -243,7 +336,7 @@ export default function ChatSessionPage() {
             
             {newsletterExpanded && (
               <div className="border-t border-[var(--border)] p-4 space-y-3">
-                {topics.map((topic) => (
+                {newsletter.trends.map((topic) => (
                   <div key={topic.id} className="space-y-2">
                     <div className="flex items-center justify-between">
                       <h4 className="text-sm font-medium text-[var(--text)]">
@@ -294,9 +387,6 @@ export default function ChatSessionPage() {
                 <p className="text-sm text-[var(--text)] leading-relaxed">
                   {currentTopic.summary}
                 </p>
-                <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                  {currentTopic.description}
-                </p>
               </CardContent>
             </Card>
           </div>
@@ -306,18 +396,29 @@ export default function ChatSessionPage() {
             <div className="w-full max-w-3xl">
               <h4 className="text-sm font-medium text-[var(--text)] mb-3">建议的问题：</h4>
               <div className="space-y-2">
-                {suggestedQuestions.map((question, index) => (
-                  <Button
-                    key={index}
-                    variant="outline"
-                    size="sm"
-                    className="justify-start text-left h-auto py-2 px-3 text-xs w-full"
-                    onClick={() => sendQuestion(question)}
-                    disabled={isLoadingResponse}
-                  >
-                    {question}
-                  </Button>
-                ))}
+                {isInitializing ? (
+                  <div className="text-center py-4">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[var(--accent)] mx-auto mb-2"></div>
+                    <p className="text-sm text-[var(--text-secondary)]">正在生成智能问题...</p>
+                  </div>
+                ) : suggest.length > 0 ? (
+                  suggest.map((question, index) => (
+                    <Button
+                      key={question}
+                      variant="outline"
+                      size="sm"
+                      className="justify-start text-left h-auto py-2 px-3 text-xs w-full"
+                      onClick={() => sendQuestion(question)}
+                      disabled={isLoadingResponse}
+                    >
+                      {question}
+                    </Button>
+                  ))
+                ) : (
+                  <div className="text-center py-4 text-[var(--text-secondary)]">
+                    <p className="text-sm">暂无建议问题</p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -360,13 +461,13 @@ export default function ChatSessionPage() {
                 <Bot className="w-4 h-4 text-white" />
               </div>
               <div className="w-full max-w-3xl px-4 py-2 rounded-lg bg-[var(--surface-alt)] text-[var(--text)]">
-                <p className="text-sm">...</p>
+                <p className="text-sm">思考中...</p>
               </div>
             </div>
           )}
 
           {/* Topic Navigation Buttons */}
-          {history.length > 2 && !isLoadingResponse && (
+          {canProceedToNextTopic && (
             <div className="flex justify-center space-x-4">
               {/* Previous Topic Button - Show if not first topic */}
               {currentIdx > 0 && (

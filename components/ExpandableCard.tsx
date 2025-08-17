@@ -2,6 +2,31 @@ import { Card, CardContent } from "@/components/ui/card"
 import { useRouter } from "next/navigation"
 import { useState, useEffect } from "react"
 import { getCategoryColor } from "@/utils/categoryColors"
+import { FALLBACK_DATA } from "@/config/fallbackData"
+
+interface Headline {
+  id: string;
+  title: string;
+  source: string;
+  url: string;
+  timestamp: string;
+}
+
+interface Trend {
+  id: string;
+  title: string;
+  summary: string;
+  category: string;
+  headlines: Headline[];
+}
+
+interface DailyNewsletter {
+  id: string;
+  title: string;
+  subtitle: string;
+  date: string;
+  trends: Trend[];
+}
 
 interface TrendResponse {
   title: string;
@@ -15,92 +40,33 @@ interface TrendResponse {
 interface ExpandableCardProps {
   title: string
   cardContent?: React.ReactNode
+  newsletter?: DailyNewsletter | null
 }
 
-export default function ExpandableCard({ title, cardContent }: ExpandableCardProps) {
+export default function ExpandableCard({ title, cardContent, newsletter }: ExpandableCardProps) {
   const router = useRouter()
   const [todaysTheme, setTodaysTheme] = useState<TrendResponse | null>(null)
   const [loading, setLoading] = useState(true)
 
     useEffect(() => {
-    const fetchTrends = async () => {
-      try {
-        // Check if we have cached data from today
-        const today = new Date().toDateString()
-        const cachedData = localStorage.getItem('trendsCache')
-        
-        if (cachedData) {
-          const parsed = JSON.parse(cachedData)
-          if (parsed.date === today && parsed.data) {
-            console.log('Using cached trends data from today')
-            setTodaysTheme(parsed.data)
-            setLoading(false)
-            return
-          }
-        }
-        
-        console.log('Fetching fresh trends from /api/trend...')
-        const response = await fetch('/api/trend')
-        console.log('Response status:', response.status)
-        console.log('Response ok:', response.ok)
-        
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`)
-        }
-        
-        const result = await response.json()
-        console.log('API result:', result)
-        
-        if (result.success && result.data) {
-          console.log('Setting todaysTheme with:', result.data)
-          setTodaysTheme(result.data)
-          
-          // Cache the data with today's date
-          const cacheData = {
-            date: today,
-            data: result.data
-          }
-          localStorage.setItem('trendsCache', JSON.stringify(cacheData))
-          console.log('Trends data cached for today')
-        } else {
-          console.error('API returned error:', result)
-          throw new Error(result.error || 'Failed to fetch news data')
-        }
-      } catch (error) {
-        console.error('Failed to fetch trends:', error)
-        // Try to use cached data even if it's old
-        const cachedData = localStorage.getItem('trendsCache')
-        if (cachedData) {
-          try {
-            const parsed = JSON.parse(cachedData)
-            if (parsed.data) {
-              console.log('Using cached trends data (may be old)')
-              setTodaysTheme(parsed.data)
-              setLoading(false)
-              return
-            }
-          } catch (parseError) {
-            console.error('Failed to parse cached data:', parseError)
-          }
-        }
-        
-        // Fallback to default data
-        setTodaysTheme({
-          title: "变动中的世界，视角决定答案",
-          subtitle: "今日焦点：社会变革、芯片竞赛、全球货币新秩序",
-          bullets: [
-            { id: "society", tagline: "年轻人涌向\"三线城市\"" },
-            { id: "tech", tagline: "国产 3nm AI 芯片面世" },
-            { id: "economy", tagline: "数字人民币跨境试点扩容" }
-          ]
-        })
-      } finally {
-        setLoading(false)
-      }
+    if (newsletter) {
+      // Use newsletter prop if available
+      const transformedTheme = {
+        title: newsletter.title,
+        subtitle: newsletter.subtitle,
+        bullets: newsletter.trends.map(trend => ({
+          id: trend.id,
+          tagline: trend.title
+        }))
+      };
+      setTodaysTheme(transformedTheme);
+      setLoading(false);
+    } else {
+      // Fallback to default data if no newsletter
+      setTodaysTheme(FALLBACK_DATA.trends);
+      setLoading(false);
     }
-
-    fetchTrends()
-  }, [])
+  }, [newsletter])
 
   if (loading) {
     return (
