@@ -94,6 +94,7 @@ function ChatSessionPageContent() {
         },
         body: JSON.stringify({
           topicId: currentTrend.id,
+          mode: "trend", // Specify trend mode for newsletter trends
           question: "", // Empty question for initialization
           history: [],
           init: true // Flag to indicate initialization
@@ -115,6 +116,7 @@ function ChatSessionPageContent() {
         },
         body: JSON.stringify({
           topicId: currentTrend.id,
+          mode: "trend", // Specify trend mode for newsletter trends
           question: "请以专家视角总结这个趋势的背景、现状和重要性",
           history: [],
           init: true
@@ -175,6 +177,7 @@ function ChatSessionPageContent() {
         },
         body: JSON.stringify({
           topicId: trend.id,
+          mode: "trend", // Specify trend mode for newsletter trends
           question: question,
           history: history
         })
@@ -354,7 +357,7 @@ function ChatSessionPageContent() {
                       <h4 className="text-sm font-medium text-[var(--text)]">
                         {topic.title}
                       </h4>
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getCategoryColor(topic.category)}`}>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium text-[var(--background)] ${getCategoryColor(topic.category)}`}>
                         {topic.category}
                       </span>
                     </div>

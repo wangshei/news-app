@@ -132,7 +132,7 @@ export default function TopicSelectPage() {
               {newsletter.trends.map((trend: Trend) => (
                 <div key={trend.id} className="space-y-3">
                   <div className="flex items-start space-x-3">
-                    <span className={`px-2 rounded-full text-xs font-medium ${getCategoryColor(trend.category)} mt-1`}>
+                    <span className={`px-2 rounded-full text-xs font-medium text-[var(--background)] ${getCategoryColor(trend.category)} mt-1`}>
                       {trend.category}
                     </span>
                     <div className="flex-1">

@@ -127,6 +127,7 @@ function ChatPageContent() {
         },
         body: JSON.stringify({
           topicId: headline.id,
+          mode: "headline", // Specify headline mode for individual news
           question: `请为这条新闻生成内容，必须严格按照以下JSON格式返回，不要添加任何其他文字：
 
 新闻标题：${headline.title}
@@ -270,6 +271,7 @@ function ChatPageContent() {
         },
         body: JSON.stringify({
           topicId: headline.id,
+          mode: "headline", // Specify headline mode for individual news
           question: question
         })
       })
@@ -403,6 +405,7 @@ ${content}
               },
               body: JSON.stringify({
                 topicId: headline.id,
+                mode: "headline", // Specify headline mode for individual news
                 question: aiPrompt,
                 history: []
               })

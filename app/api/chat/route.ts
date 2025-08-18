@@ -43,6 +43,7 @@ interface ChatRequest {
   question: string;
   history: ChatMessage[];
   init?: boolean; // Added for initialization requests
+  mode?: "trend" | "headline"; // Added to distinguish chat types
 }
 
 
@@ -87,10 +88,10 @@ export async function POST(req: NextRequest) {
     
     // Parse request body
     const body: ChatRequest = await req.json();
-    const { topicId, question, init } = body;
+    const { topicId, question, init, mode = "trend" } = body;
     
     // Log request details
-    console.log("[CHAT] req", body.topicId, body.question, init ? "INIT" : "");
+    console.log("[CHAT] req", body.topicId, body.question, init ? "INIT" : "", "mode:", mode);
     
     if (!topicId) {
       return NextResponse.json(
@@ -99,108 +100,170 @@ export async function POST(req: NextRequest) {
       );
     }
     
-    // Load today's newsletter from the in-memory cache (using AM/PM window)
-    const now = new Date();
-    const yyyyMMdd = (d: Date) => d.toISOString().slice(0,10);
-    const window = now.getHours() < 12 ? "AM" : "PM";
-    const cacheKey = `${yyyyMMdd(now)}-${window}`;
+    let contextData: any = null;
+    let contextType: "trend" | "headline" = "trend";
     
-    let newsletter = newsletterCache[cacheKey];
-    
-    // If newsletter is undefined, try to fetch it from the newsletter API
-    if (!newsletter) {
+    // Fetch context based on mode
+    if (mode === "trend") {
+      // For trend chat: fetch newsletter to get trend context
+      console.log("[CHAT] Mode: trend - fetching newsletter context");
+      
+      // Load today's newsletter from the in-memory cache (using AM/PM window)
+      const now = new Date();
+      const yyyyMMdd = (d: Date) => d.toISOString().slice(0,10);
+      const window = now.getHours() < 12 ? "AM" : "PM";
+      const cacheKey = `${yyyyMMdd(now)}-${window}`;
+      
+      let newsletter = newsletterCache[cacheKey];
+      
+      // If newsletter is undefined, try to fetch it from the newsletter API
+      if (!newsletter) {
+        try {
+          console.log("[CHAT] No cached newsletter, fetching from newsletter API...");
+          // Use proper server-side URL construction
+          const baseUrl = req.nextUrl.origin || 'http://localhost:3000';
+          const newsletterResponse = await fetch(`${baseUrl}/api/newsletter`);
+          console.log("[CHAT] Newsletter API response status:", newsletterResponse.status);
+          
+          if (newsletterResponse.ok) {
+            const result = await newsletterResponse.json();
+            console.log("[CHAT] Newsletter API response:", {
+              hasStatus: !!result.status,
+              status: result.status,
+              hasTrends: !!result.trends,
+              trendsCount: result.trends?.length,
+              hasError: !!result.error
+            });
+            
+            // Check if newsletter is still building
+            if (result.status === "building") {
+              console.log("[CHAT] Newsletter is still building, returning building response");
+              return NextResponse.json({
+                success: true,
+                data: {
+                  answer: JSON.stringify({
+                    questions: ["数据生成中，请稍候", "请等待新闻内容加载完成", "稍后再试"],
+                    summary: "数据生成中，请稍候",
+                    description: "新闻内容正在生成中，请稍后再试。"
+                  }),
+                  nextQuestions: []
+                }
+              });
+            }
+            
+            // Cache the newsletter for future use
+            newsletterCache[cacheKey] = result;
+            newsletter = result;
+            console.log("[CHAT] Successfully fetched and cached newsletter data");
+          } else {
+            console.log("[CHAT] Newsletter API returned error:", newsletterResponse.status, newsletterResponse.statusText);
+          }
+        } catch (fetchError) {
+          console.log("[CHAT] Failed to fetch newsletter:", fetchError);
+        }
+      }
+      
+      // If newsletter is still undefined, return "data loading" response
+      if (!newsletter) {
+        console.log("[CHAT] No newsletter data available yet, returning loading response");
+        console.log("[CHAT] Newsletter state:", {
+          cached: !!newsletterCache[cacheKey],
+          cacheKey,
+          cacheKeys: Object.keys(newsletterCache)
+        });
+        return NextResponse.json({
+          success: true,
+          data: {
+            answer: JSON.stringify({
+              questions: ["正在获取今日新闻", "请稍后再试", "新闻内容加载中"],
+              summary: "正在获取今日新闻，请稍后再试",
+              description: "我正在获取今日新闻，请稍后再试。"
+            }),
+            nextQuestions: []
+          }
+        });
+      }
+      
+      contextData = newsletter;
+      contextType = "trend";
+      
+    } else if (mode === "headline") {
+      // For headline chat: fetch headlines to get headline context
+      console.log("[CHAT] Mode: headline - fetching headlines context");
+      
       try {
-        console.log("[CHAT] No cached newsletter, fetching from newsletter API...");
-        // Use relative URL since we're on the same server
-        const newsletterResponse = await fetch('/api/newsletter');
-        console.log("[CHAT] Newsletter API response status:", newsletterResponse.status);
-        
-        if (newsletterResponse.ok) {
-          const result = await newsletterResponse.json();
-          console.log("[CHAT] Newsletter API response:", {
-            hasStatus: !!result.status,
-            status: result.status,
-            hasTrends: !!result.trends,
-            trendsCount: result.trends?.length,
-            hasError: !!result.error
+        // Use proper server-side URL construction
+        const baseUrl = req.nextUrl.origin || 'http://localhost:3000';
+        const headlinesResponse = await fetch(`${baseUrl}/api/headlines`);
+        if (headlinesResponse.ok) {
+          const headlinesData = await headlinesResponse.json();
+          console.log("[CHAT] Headlines API response:", {
+            hasColumns: !!headlinesData.columns,
+            columnsCount: headlinesData.columns?.length
           });
           
-          // Check if newsletter is still building
-          if (result.status === "building") {
-            console.log("[CHAT] Newsletter is still building, returning building response");
+          // Search through all columns for the headline
+          let foundHeadline = null;
+          for (const column of headlinesData.columns) {
+            const found = column.cards.find((card: { id: string; title: string; source: string; url: string; category: string; timestamp: string }) => card.id === topicId);
+            if (found) {
+              foundHeadline = found;
+              console.log(`[CHAT] Found headline: ${foundHeadline.title}`);
+              break;
+            }
+          }
+          
+          if (foundHeadline) {
+            contextData = foundHeadline;
+            contextType = "headline";
+          } else {
+            console.log(`[CHAT] Headline not found: ${topicId}`);
             return NextResponse.json({
               success: true,
               data: {
-                answer: JSON.stringify({
-                  questions: ["数据生成中，请稍候", "请等待新闻内容加载完成", "稍后再试"],
-                  summary: "数据生成中，请稍候",
-                  description: "新闻内容正在生成中，请稍后再试。"
-                }),
+                answer: "抱歉，这条新闻已过期或不存在，请返回首页重新选择。",
                 nextQuestions: []
               }
             });
           }
-          
-          // Cache the newsletter for future use
-          newsletterCache[cacheKey] = result;
-          newsletter = result;
-          console.log("[CHAT] Successfully fetched and cached newsletter data");
         } else {
-          console.log("[CHAT] Newsletter API returned error:", newsletterResponse.status, newsletterResponse.statusText);
-        }
-      } catch (fetchError) {
-        console.log("[CHAT] Failed to fetch newsletter:", fetchError);
-      }
-    }
-    
-    // If newsletter is still undefined, return "data loading" response
-    if (!newsletter) {
-      console.log("[CHAT] No newsletter data available yet, returning loading response");
-      console.log("[CHAT] Newsletter state:", {
-        cached: !!newsletterCache[cacheKey],
-        cacheKey,
-        cacheKeys: Object.keys(newsletterCache),
-        hasOrigin: !!req.headers.get('origin'),
-        origin: req.headers.get('origin')
-      });
-      return NextResponse.json({
-        success: true,
-        data: {
-          answer: JSON.stringify({
-            questions: ["正在获取今日新闻", "请稍后再试", "新闻内容加载中"],
-            summary: "正在获取今日新闻，请稍后再试",
-            description: "我正在获取今日新闻，请稍后再试。"
-          }),
-          nextQuestions: []
-        }
-      });
-    }
-    
-    // Find the current trend or headline
-    const trend = newsletter.trends.find((t: Trend) => t.id === topicId);
-    let headline = null;
-    
-    // If no trend found, try to find a headline from headlines API
-    if (!trend) {
-      try {
-        console.log(`[CHAT] Topic not found in trends, checking headlines API for: ${topicId}`);
-        // Use relative URL since we're on the same server
-        const headlinesResponse = await fetch('/api/headlines');
-        if (headlinesResponse.ok) {
-          const headlinesData = await headlinesResponse.json();
-          // Search through all columns for the headline
-          for (const column of headlinesData.columns) {
-            const found = column.cards.find((card: { id: string; title: string; source: string; url: string; category: string; timestamp: string }) => card.id === topicId);
-            if (found) {
-              headline = found;
-              console.log(`[CHAT] Found headline: ${headline.title}`);
-              break;
-            }
-          }
+          console.log("[CHAT] Headlines API returned error:", headlinesResponse.status, headlinesResponse.statusText);
         }
       } catch (headlinesError) {
-        console.log(`[CHAT] Failed to fetch headlines:`, headlinesError);
+        console.log("[CHAT] Failed to fetch headlines:", headlinesError);
       }
+      
+      // If headlines fetch failed, return error response
+      if (!contextData) {
+        console.log("[CHAT] No headlines data available, returning error response");
+        return NextResponse.json({
+          success: true,
+          data: {
+            answer: "抱歉，无法加载新闻内容，请稍后再试。",
+            nextQuestions: []
+          }
+        });
+      }
+    }
+    
+    // Find the current trend or headline from context data
+    let trend = null;
+    let headline = null;
+    
+    if (contextType === "trend") {
+      trend = contextData.trends.find((t: Trend) => t.id === topicId);
+      if (!trend) {
+        console.log(`[CHAT] Topic not found in trends: ${topicId}`);
+        return NextResponse.json({
+          success: true,
+          data: {
+            answer: "抱歉，该主题不存在，请返回首页重新选择。",
+            nextQuestions: []
+          }
+        });
+      }
+    } else if (contextType === "headline") {
+      headline = contextData;
     }
     
     // If neither trend nor headline found, return loading response
@@ -261,7 +324,7 @@ ${trend.headlines.map((h: Headline) => `• ${h.title}（${h.source}）`).join('
 
 严格返回 JSON:
 {
-  "answer": "基于这条新闻，我建议从以下几个角度深入探讨：",
+  "answer": "基于当前新闻，我建议从以下几个角度深入探讨：",
   "nextQuestions": ["问题1", "问题2"]
 }`;
       } else {
