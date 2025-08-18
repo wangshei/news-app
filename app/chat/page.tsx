@@ -39,7 +39,6 @@ function ChatPageContent() {
 
   const [headline, setHeadline] = useState<Headline | null>(null)
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
-  const [inputValue, setInputValue] = useState("")
   const [loading, setLoading] = useState(true)
 
   const [initialQuestions, setInitialQuestions] = useState<string[]>([])
@@ -248,6 +247,8 @@ function ChatPageContent() {
   const handleQuestionClick = async (question: string) => {
     if (!headline) return
 
+    console.log('[CHAT] handleQuestionClick called with:', { question, headlineId: headline.id })
+
     // Add user message
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
@@ -261,6 +262,12 @@ function ChatPageContent() {
 
     // POST to chat API
     try {
+      console.log('[CHAT] Making API call to /api/chat with:', {
+        topicId: headline.id,
+        mode: "headline",
+        question: question
+      })
+      
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
@@ -273,8 +280,12 @@ function ChatPageContent() {
         })
       })
 
+      console.log('[CHAT] API response status:', response.status, response.ok)
+      
       if (response.ok) {
         const result = await response.json()
+        console.log('[CHAT] API response data:', result)
+        
         if (result.success && result.data) {
           // Add system reply
           const systemMessage: ChatMessage = {
@@ -284,6 +295,7 @@ function ChatPageContent() {
             timestamp: new Date()
           }
           setChatMessages(prev => [...prev, systemMessage])
+          console.log('[CHAT] Added system message:', systemMessage.content)
           
           // Handle follow-up questions if they exist (only generate once)
           if (result.data.nextQuestions && Array.isArray(result.data.nextQuestions) && result.data.nextQuestions.length > 0 && !showFollowUpQuestions) {
@@ -293,10 +305,16 @@ function ChatPageContent() {
               setShowFollowUpQuestions(true)
             }
           }
+        } else {
+          console.log('[CHAT] API response missing success or data:', result)
         }
+      } else {
+        console.error('[CHAT] API call failed with status:', response.status)
+        const errorText = await response.text()
+        console.error('[CHAT] Error response body:', errorText)
       }
     } catch (error) {
-      console.error('Error calling chat API:', error)
+      console.error('[CHAT] Error calling chat API:', error)
       
       // Add placeholder reply if API fails
       const systemMessage: ChatMessage = {
@@ -311,11 +329,10 @@ function ChatPageContent() {
     }
   }
 
-  const handleCustomQuestion = async () => {
-    if (!inputValue.trim() || !headline) return
+  const handleCustomQuestion = async (message: string) => {
+    if (!message.trim() || !headline) return
 
-    const question = inputValue.trim()
-    setInputValue("")
+    const question = message.trim()
     await handleQuestionClick(question)
   }
 

@@ -50,27 +50,40 @@ interface ChatRequest {
 
 // Helper function for DeepSeek calls
 async function deepseekCall(prompt: string, maxTokens: number = 800) {
-      if (!process.env.DEEPSEEK_API) {
-      throw new Error("DEEPSEEK_API not configured");
-    }
+  console.log(`[DEEPSEEK] Starting API call with ${maxTokens} max tokens`);
+  
+  if (!process.env.DEEPSEEK_API) {
+    console.error("[DEEPSEEK] Missing API key");
+    throw new Error("DEEPSEEK_API not configured");
+  }
+
+  console.log(`[DEEPSEEK] API key configured, length: ${process.env.DEEPSEEK_API.length}`);
 
   const openai = new OpenAI({
-          apiKey: process.env.DEEPSEEK_API,
+    apiKey: process.env.DEEPSEEK_API,
     baseURL: "https://api.deepseek.com/v1",
     defaultHeaders: {
       "Content-Type": "application/json",
     },
   });
 
-  const result = await openai.chat.completions.create({
-    model: "deepseek-chat",
-    messages: [{ role: "user", content: prompt }],
-    max_tokens: maxTokens,
-    temperature: 0.7,
-    top_p: 0.9
-  });
-
-  return result.choices[0]?.message?.content || "";
+  try {
+    console.log(`[DEEPSEEK] Sending request to model: deepseek-chat`);
+    const result = await openai.chat.completions.create({
+      model: "deepseek-chat",
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: maxTokens,
+      temperature: 0.7,
+      top_p: 0.9
+    });
+    
+    const content = result.choices[0]?.message?.content || "";
+    console.log(`[DEEPSEEK] API call successful, response length: ${content.length}`);
+    return content;
+  } catch (apiError) {
+    console.error(`[DEEPSEEK] API call failed:`, apiError);
+    throw apiError;
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -87,7 +100,31 @@ export async function POST(req: NextRequest) {
     }
     
     // Parse request body
-    const body: ChatRequest = await req.json();
+    let body: ChatRequest;
+    try {
+      body = await req.json();
+      console.log("[CHAT] Request body parsed successfully:", {
+        topicId: body.topicId,
+        questionLength: body.question?.length || 0,
+        init: !!body.init,
+        mode: body.mode || "trend",
+        hasHistory: !!body.history?.length
+      });
+    } catch (parseError) {
+      console.error("[CHAT] Failed to parse request body:", parseError);
+      return NextResponse.json({
+        success: true,
+        data: {
+          answer: JSON.stringify({
+            questions: ["请求格式错误", "请检查输入", "重新尝试"],
+            summary: "请求格式错误，请重新尝试",
+            description: "抱歉，请求格式有问题，请重新尝试。"
+          }),
+          nextQuestions: []
+        }
+      });
+    }
+    
     const { topicId, question, init, mode = "trend" } = body;
     
     // Log request details
@@ -448,15 +485,16 @@ ${trend.headlines.map((h: Headline) => `• ${h.title}（${h.source}）`).join('
     const startTime = Date.now();
     let raw: string;
     try {
+      console.log(`[CHAT] Calling DeepSeek API with prompt length: ${prompt.length}`);
       raw = await Promise.race([
         deepseekCall(prompt, 800),
         new Promise<string>((_, r) => setTimeout(() => r("TIMEOUT"), LLM_TIMEOUT_MS))
       ]);
       const duration = Date.now() - startTime;
-      console.log(`[CHAT] DeepSeek completed in ${duration}ms`);
+      console.log(`[CHAT] DeepSeek completed in ${duration}ms, response length: ${raw.length}`);
     } catch (llmError) {
       const duration = Date.now() - startTime;
-      console.log(`[CHAT] DeepSeek failed after ${duration}ms`);
+      console.log(`[CHAT] DeepSeek failed after ${duration}ms:`, llmError);
       throw llmError;
     }
     
@@ -547,6 +585,9 @@ AI回答: "${parsed.answer}"
     
   } catch (error) {
     console.error(`[CHAT] FAIL - Route error:`, error);
+    console.error(`[CHAT] Error type:`, typeof error);
+    console.error(`[CHAT] Error constructor:`, error?.constructor?.name);
+    console.error(`[CHAT] Error stack:`, error instanceof Error ? error.stack : 'No stack');
     
     // If DeepSeek call throws (key / quota / network), return fallback
     if (error instanceof Error && (
@@ -569,12 +610,18 @@ AI回答: "${parsed.answer}"
       return NextResponse.json(fallbackResponse);
     }
     
-    return NextResponse.json(
-      { 
-        error: "Failed to process chat request",
-        details: error instanceof Error ? error.message : "Unknown error"
-      },
-      { status: 500 }
-    );
+    // For any other error, return a fallback response instead of 500
+    console.error("[CHAT] Unexpected error, returning fallback response");
+    return NextResponse.json({
+      success: true,
+      data: {
+        answer: JSON.stringify({
+          questions: ["系统遇到问题", "请稍后再试", "正在恢复中"],
+          summary: "系统遇到问题，请稍后再试",
+          description: "抱歉，系统遇到了一些问题，请稍后再试。"
+        }),
+        nextQuestions: []
+      }
+    });
   }
 }
