@@ -1,13 +1,13 @@
 'use client'
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft, ChevronDown, ChevronUp } from "lucide-react"
 import { getCategoryColor } from "@/utils/categoryColors"
 import { useNewsletter } from "@/hooks/useNewsletter"
 import { CATEGORIES } from "@/config/categories"
-import ChatLayout from "@/components/ChatLayout"
+
 import TrendCard from "@/components/TrendCard"
 import ChatWindow from "@/components/ChatWindow"
 
@@ -21,22 +21,9 @@ interface Headline {
   timestamp: string;
 }
 
-interface Trend {
-  id: string;
-  title: string;
-  summary: string;
-  description?: string; // Optional expanded description
-  category: string;
-  headlines: Headline[];
-}
 
-interface DailyNewsletter {
-  id: string;
-  title: string;
-  subtitle: string;
-  date: string;
-  trends: Trend[];
-}
+
+
 
 interface ChatMessage {
   id: string;
@@ -46,7 +33,7 @@ interface ChatMessage {
   followUpQuestions?: string[]; // Added for follow-up questions
 }
 
-export default function ChatSessionPage() {
+function ChatSessionPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const topicIdx = parseInt(searchParams.get('topicIdx') || '0')
@@ -415,7 +402,7 @@ export default function ChatSessionPage() {
                     <p className="text-sm text-[var(--text-secondary)]">正在生成智能问题...</p>
                   </div>
                 ) : suggest.length > 0 ? (
-                  suggest.map((question, index) => (
+                  suggest.map((question) => (
                     <Button
                       key={question}
                       variant="outline"
@@ -439,19 +426,32 @@ export default function ChatSessionPage() {
          
 
           {/* Chat Window */}
-          <ChatWindow
-            mode="trend"
-            context={{ title: currentTopic.title }}
-            onSendMessage={sendQuestion}
-            messages={history}
-            isLoading={isLoadingResponse}
-            canProceedToNextTopic={canProceedToNextTopic}
-            onNextTopic={handleNextTopic}
-            onPreviousTopic={currentIdx > 0 ? handlePreviousTopic : undefined}
-            isLastTopic={isLastTopic}
-          />
+      <ChatWindow
+        onSendMessage={sendQuestion}
+        messages={history}
+        isLoading={isLoadingResponse}
+        canProceedToNextTopic={canProceedToNextTopic}
+        onNextTopic={handleNextTopic}
+        onPreviousTopic={currentIdx > 0 ? handlePreviousTopic : undefined}
+        isLastTopic={isLastTopic}
+      />
         </div>
       </div>
     </div>
+  )
+}
+
+export default function ChatSessionPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[var(--surface)] flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[var(--accent)] mx-auto mb-4"></div>
+          <p className="text-[var(--text-secondary)]">加载中...</p>
+        </div>
+      </div>
+    }>
+      <ChatSessionPageContent />
+    </Suspense>
   )
 }

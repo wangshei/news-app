@@ -26,11 +26,11 @@ interface TrendDetail {
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const topicId = params.id;
-    console.log("Fetching newsletter topic details for ID:", topicId);
+    const { id } = await params;
+    console.log("Fetching newsletter topic details for ID:", id);
 
     // TODO: replace with real data from newsletter API
     const mockTrendDetails: { [key: string]: TrendDetail } = {
@@ -102,7 +102,7 @@ export async function GET(
       }
     };
 
-    const trendDetail = mockTrendDetails[topicId];
+    const trendDetail = mockTrendDetails[id];
     
     if (!trendDetail) {
       return NextResponse.json(

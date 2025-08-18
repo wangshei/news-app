@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { MessageCircle, Bot, User, ArrowLeftCircle, ArrowRightCircle, SendIcon } from "lucide-react";
+import { Bot, User, ArrowLeftCircle, ArrowRightCircle, SendIcon } from "lucide-react";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -14,8 +14,6 @@ interface ChatMessage {
 }
 
 interface ChatWindowProps {
-  mode: "trend" | "headline";
-  context: { title: string; [key: string]: any };
   onSendMessage: (message: string) => Promise<void>;
   messages: ChatMessage[];
   isLoading: boolean;
@@ -26,8 +24,6 @@ interface ChatWindowProps {
 }
 
 export default function ChatWindow({
-  mode,
-  context,
   onSendMessage,
   messages,
   isLoading,
@@ -102,14 +98,14 @@ export default function ChatWindow({
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm]}
                       components={{
-                        strong: ({node, ...props}) => <strong className="text-[var(--accent)] font-semibold" {...props} />,
-                        em: ({node, ...props}) => <em className="text-[var(--text-secondary)]" {...props} />,
-                        ul: ({node, ...props}) => <ul className="list-disc pl-6 my-2 space-y-1" {...props} />,
-                        ol: ({node, ...props}) => <ol className="list-decimal pl-6 my-2 space-y-1" {...props} />,
-                        li: ({node, ...props}) => <li className="mb-1" {...props} />,
-                        p: ({node, ...props}) => <p className="mb-2 leading-relaxed" {...props} />,
-                        blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-[var(--accent)] pl-4 italic text-[var(--text)] my-2" {...props} />,
-                        code: ({node, ...props}) => <code className="bg-[var(--accent)] px-1 rounded text-[var(--accent)]" {...props} />,
+                        strong: ({...props}) => <strong className="text-[var(--accent)] font-semibold" {...props} />,
+                        em: ({...props}) => <em className="text-[var(--text-secondary)]" {...props} />,
+                        ul: ({...props}) => <ul className="list-disc pl-6 my-2 space-y-1" {...props} />,
+                        ol: ({...props}) => <ol className="list-decimal pl-6 my-2 space-y-1" {...props} />,
+                        li: ({...props}) => <li className="mb-1" {...props} />,
+                        p: ({...props}) => <p className="mb-2 leading-relaxed" {...props} />,
+                        blockquote: ({...props}) => <blockquote className="border-l-4 border-[var(--accent)] pl-4 italic text-[var(--text)] my-2" {...props} />,
+                        code: ({...props}) => <code className="bg-[var(--accent)] px-1 rounded text-[var(--accent)]" {...props} />,
                       }}
                     >
                       {message.content}

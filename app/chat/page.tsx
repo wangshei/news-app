@@ -1,34 +1,21 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { ArrowLeft, ExternalLink, MessageCircle } from "lucide-react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { getCategoryColor } from "@/utils/categoryColors"
+
+import { ArrowLeft } from "lucide-react"
+
+
 import { useHeadlines } from "@/hooks/useHeadlines"
 import ChatLayout from "@/components/ChatLayout"
 import HeadlineCard from "@/components/HeadlineCard"
 import ChatWindow from "@/components/ChatWindow"
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 
-interface Source {
-  id: string
-  name: string
-  quote: string
-  url: string
-}
 
-interface TrendDetail {
-  id: string
-  title: string
-  summary: string
-  description: string
-  category: string
-  sources: Source[]
-}
+
+
+
 
 interface Headline {
   id: string
@@ -46,17 +33,17 @@ interface ChatMessage {
   timestamp: Date
 }
 
-export default function ChatPage() {
+function ChatPageContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
-  const [trendDetail, setTrendDetail] = useState<TrendDetail | null>(null)
+
   const [headline, setHeadline] = useState<Headline | null>(null)
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [inputValue, setInputValue] = useState("")
   const [loading, setLoading] = useState(true)
-  const [expandedSource, setExpandedSource] = useState<string | null>(null)
+
   const [initialQuestions, setInitialQuestions] = useState<string[]>([])
-  const [followUpQuestions, setFollowUpQuestions] = useState<string[]>([])
+
   const [showFollowUpQuestions, setShowFollowUpQuestions] = useState(false)
   const [questionsGenerated, setQuestionsGenerated] = useState(false)
   const [headlineSummary, setHeadlineSummary] = useState<string>("")
@@ -65,51 +52,38 @@ export default function ChatPage() {
   const [isAnalyzingSource, setIsAnalyzingSource] = useState(false)
   
   // Use headlines hook for Kanban card navigation
-  const { headlines: headlinesData } = useHeadlines()
+  const { headlines: headlinesData, loading: headlinesLoading } = useHeadlines()
   
-  // Find headline by ID from headlines data
-  const findHeadlineById = (id: string): Headline | null => {
-    if (!headlinesData) return null
-    
-    for (const column of headlinesData.columns) {
-      const found = column.cards.find(card => card.id === id)
-      if (found) return found
-    }
-    return null
-  }
+
 
   // Get topic ID from router query
   useEffect(() => {
-    const topicId = searchParams.get('id') || searchParams.get('selected')
+    const id = searchParams.get('id')
     
-    if (topicId) {
-      // Check if this is a headline ID from Kanban board
-      if (headlinesData) {
-        const foundHeadline = findHeadlineById(topicId)
-        if (foundHeadline) {
-          console.log('Found headline:', foundHeadline)
-          setHeadline(foundHeadline)
-          setLoading(false)
-          return
-        }
-      }
-      
-      // If not a headline, check if it's a trend ID from newsletter
-      if (topicId.startsWith('society') || topicId.startsWith('tech') || topicId.startsWith('economy')) {
-        // This is a trend ID, we can handle it directly without fetching
-        console.log('Trend ID detected:', topicId)
-        setLoading(false)
-        // For now, we'll just set a placeholder trend detail
-        // In the future, this could fetch from the newsletter cache
-      } else {
-        // Unknown ID type, set loading to false
-        console.log('Unknown ID type:', topicId)
-        setLoading(false)
-      }
-    } else {
-      setLoading(false)
+    if (!id) {
+      console.log('[HEADLINE-CHAT] No ID provided, redirecting to home')
+      router.replace('/')
+      return
     }
-  }, [searchParams, headlinesData])
+    
+    console.log('[HEADLINE-CHAT] id =', id)
+    
+    if (headlinesData) {
+      // Flatten columns and find headline
+      const headline = headlinesData.columns
+        .flatMap(col => col.cards)
+        .find(card => card.id === id)
+      
+      if (headline) {
+        console.log('[HEADLINE-CHAT] id =', id, 'found?', true)
+        setHeadline(headline)
+        setLoading(false)
+      } else {
+        console.log('[HEADLINE-CHAT] id =', id, 'found?', false)
+        setLoading(false)
+      }
+    }
+  }, [searchParams, headlinesData, router])
 
   // Generate initial questions and analyze source when headline is loaded
   useEffect(() => {
@@ -271,29 +245,10 @@ export default function ChatPage() {
     }
   }
 
-  const fetchTrendDetail = async (topicId: string) => {
-    try {
-      console.log('Fetching trend detail for topic:', topicId)
-      const response = await fetch(`/api/daily/${topicId}`)
-      
-      if (response.ok) {
-        const result = await response.json()
-        if (result.success && result.data) {
-          setTrendDetail(result.data)
-          console.log('Trend detail loaded:', result.data)
-        }
-      } else {
-        console.error('Failed to fetch trend detail')
-      }
-    } catch (error) {
-      console.error('Error fetching trend detail:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
+
 
   const handleQuestionClick = async (question: string) => {
-    if (!trendDetail && !headline) return
+    if (!headline) return
 
     // Add user message
     const userMessage: ChatMessage = {
@@ -314,7 +269,7 @@ export default function ChatPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          topicId: headline ? headline.id : trendDetail?.id || '',
+          topicId: headline.id,
           question: question
         })
       })
@@ -333,7 +288,7 @@ export default function ChatPage() {
           
           // Handle follow-up questions if they exist (only generate once)
           if (result.data.nextQuestions && Array.isArray(result.data.nextQuestions) && result.data.nextQuestions.length > 0 && !showFollowUpQuestions) {
-            setFollowUpQuestions(result.data.nextQuestions)
+    
             // Show follow-up questions after the second bot message (when we have 2+ messages)
             if (chatMessages.length >= 1) {
               setShowFollowUpQuestions(true)
@@ -358,16 +313,14 @@ export default function ChatPage() {
   }
 
   const handleCustomQuestion = async () => {
-    if (!inputValue.trim() || (!trendDetail && !headline)) return
+    if (!inputValue.trim() || !headline) return
 
     const question = inputValue.trim()
     setInputValue("")
     await handleQuestionClick(question)
   }
 
-  const toggleSourceExpansion = (sourceId: string) => {
-    setExpandedSource(expandedSource === sourceId ? null : sourceId)
-  }
+
 
     // Function to analyze source content and generate real-time description
   const analyzeSourceContent = async (headline: Headline) => {
@@ -418,7 +371,7 @@ export default function ChatPage() {
           console.log('🔍 === STEP 2: EXTRACTING TEXT CONTENT ===')
           
           // Content is already cleaned by the backend, but let's process it further
-          let content = htmlContent
+          const content = htmlContent;
           
           if (content.length > 100) {
             console.log('🤖 === STEP 3: CALLING AI WITH EXTRACTED CONTENT ===')
@@ -572,7 +525,7 @@ ${content}
     return [...new Set(questions)].slice(0, 3)
   }
 
-  if (loading) {
+  if (loading || headlinesLoading) {
     return (
       <div className="min-h-screen bg-[var(--surface)] flex items-center justify-center">
         <div className="text-center">
@@ -638,8 +591,6 @@ ${content}
 
               {/* Chat Messages and Input - Use ChatWindow component */}
               <ChatWindow
-                mode="headline"
-                context={{ title: headline.title }}
                 onSendMessage={handleCustomQuestion}
                 messages={chatMessages}
                 isLoading={isLoadingResponse}
@@ -649,8 +600,15 @@ ${content}
           </ChatLayout>
         ) : (
           <div className="p-4">
-            <div className="max-w-4xl mx-auto">
-              <p className="text-[var(--text-secondary)]">无法加载头条信息</p>
+            <div className="max-w-4xl mx-auto text-center">
+              <p className="text-[var(--text-secondary)] mb-4">这条新闻已过期或不存在，返回首页重新选择。</p>
+              <Button 
+                onClick={() => router.push('/')}
+                variant="outline"
+                size="sm"
+              >
+                返回首页
+              </Button>
             </div>
           </div>
         )}
@@ -658,5 +616,20 @@ ${content}
 
       {/* Chat input is now handled by ChatWindow component */}
     </div>
+  )
+}
+
+export default function ChatPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[var(--surface)] flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[var(--accent)] mx-auto mb-4"></div>
+          <p className="text-[var(--text-secondary)]">加载中...</p>
+        </div>
+      </div>
+    }>
+      <ChatPageContent />
+    </Suspense>
   )
 }

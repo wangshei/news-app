@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from "react"
+import { useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -25,13 +25,7 @@ interface Trend {
   headlines: Headline[];
 }
 
-interface DailyNewsletter {
-  id: string;
-  title: string;
-  subtitle: string;
-  date: string;
-  trends: Trend[];
-}
+
 
 export default function TopicSelectPage() {
   const router = useRouter()

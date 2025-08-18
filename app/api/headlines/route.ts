@@ -1,11 +1,12 @@
 // This endpoint fetches headlines using ONLY the first verified feed per category
 import { NextRequest, NextResponse } from "next/server";
 import { NEWS_SOURCES } from "@/config/newsSources";
+import { CATEGORIES } from "@/config/categories";
 import { FALLBACK_DATA } from "@/config/fallbackData";
 import * as cheerio from 'cheerio';
 
 // In-memory cache for headlines with 1-hour expiration
-const cache: { [date: string]: { data: any; timestamp: number; expiresAt: number } } = {};
+const cache: { [date: string]: { data: HeadlinesData; timestamp: number; expiresAt: number } } = {};
 
 interface Headline {
   id: string;
@@ -52,11 +53,15 @@ export async function GET(req: NextRequest) {
     async function buildHeadlines() {
       const columns: HeadlinesColumn[] = [];
       
-      // Process each category using ONLY the first source
-      for (const [category, sources] of Object.entries(NEWS_SOURCES)) {
-        if (sources.length === 0) continue;
-        
-        const source = sources[0]; // Use ONLY first source
+      // Process each category in CATEGORIES order using ONLY the first source
+      for (const meta of CATEGORIES) {
+        const category = meta.id;
+        const sources = (NEWS_SOURCES as Record<string, Array<{ name: string; url: string; rss?: boolean; selector?: string }>>)[category] || [];
+        if (!Array.isArray(sources) || sources.length === 0) {
+          console.log(`[HEADLINES] Skip ${category} - no sources in NEWS_SOURCES`);
+          continue;
+        }
+        const source = sources[0];
         console.log(`[HEADLINES] Processing ${category} from ${source.name}`);
         
         try {
@@ -73,10 +78,10 @@ export async function GET(req: NextRequest) {
           }
           
           // Process headlines for this category
-          const processedHeadlines = processHeadlines(headlines, category);
+          const processedHeadlines = processHeadlines(headlines);
           
           columns.push({
-            category: getCategoryDisplayName(category),
+            category: meta.label,
             cards: processedHeadlines.slice(0, 5) // Top 5 per category
           });
           
@@ -85,7 +90,7 @@ export async function GET(req: NextRequest) {
           
           // Return single fallback card for this category
           columns.push({
-            category: getCategoryDisplayName(category),
+            category: meta.label,
             cards: [{
               id: `${category}-fallback`,
               title: `Fallback headline for ${category}`,
@@ -169,7 +174,7 @@ export async function GET(req: NextRequest) {
 }
 
 // Fetch headlines from RSS feed
-async function fetchRSSHeadlines(source: any, category: string): Promise<Headline[]> {
+async function fetchRSSHeadlines(source: { name: string; url: string; rss?: boolean; selector?: string }, category: string): Promise<Headline[]> {
   try {
     const response = await fetch(source.url, {
       headers: {
@@ -202,7 +207,7 @@ async function fetchRSSHeadlines(source: any, category: string): Promise<Headlin
             if (!isNaN(parsedDate.getTime())) {
               timestamp = parsedDate.toISOString();
             }
-          } catch (dateError) {
+          } catch {
             console.warn(`Could not parse pubDate for ${source.name}: ${pubDate}`);
           }
         }
@@ -226,7 +231,7 @@ async function fetchRSSHeadlines(source: any, category: string): Promise<Headlin
 }
 
 // Fetch headlines from HTML using Cheerio
-async function fetchHTMLHeadlines(source: any, category: string): Promise<Headline[]> {
+async function fetchHTMLHeadlines(source: { name: string; url: string; rss?: boolean; selector?: string }, category: string): Promise<Headline[]> {
   try {
     const response = await fetch(source.url, {
       headers: {
@@ -272,7 +277,7 @@ async function fetchHTMLHeadlines(source: any, category: string): Promise<Headli
 }
 
 // Process headlines: filter by recency, deduplicate, sort by timestamp
-function processHeadlines(headlines: Headline[], category: string): Headline[] {
+function processHeadlines(headlines: Headline[]): Headline[] {
   const now = new Date();
   const twentyFourHoursAgo = new Date(now.getTime() - (24 * 60 * 60 * 1000));
   
@@ -314,12 +319,4 @@ function processHeadlines(headlines: Headline[], category: string): Headline[] {
   return uniqueHeadlines;
 }
 
-// Get display name for category
-function getCategoryDisplayName(category: string): string {
-  const displayNames: { [key: string]: string } = {
-    'society': '社会',
-    'tech': '科技',
-    'economy': '经济'
-  };
-  return displayNames[category] || category;
-}
+

@@ -1,7 +1,7 @@
 import NewsCard from "./NewsCard"
 
 interface NewsItem {
-  id: number
+  id: number | string
   time: string
   title: string
   hasImage: boolean

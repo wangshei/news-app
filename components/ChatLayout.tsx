@@ -7,7 +7,8 @@ interface ChatLayoutProps {
 
 export default function ChatLayout({ header, children }: ChatLayoutProps) {
   useEffect(() => {
-    console.log("[ChatLayout] rendered", (header as any)?.type?.name || "unknown");
+    const headerType = typeof header === 'object' && header !== null && 'type' in header && typeof header.type === 'function' ? header.type.name : 'unknown';
+    console.log("[ChatLayout] rendered", headerType);
   }, [header]);
 
   return (

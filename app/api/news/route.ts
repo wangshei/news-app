@@ -64,14 +64,14 @@ export async function GET(req: NextRequest) {
         top_p: 0.9
       });
       
-      const result = await Promise.race([openaiPromise, timeoutPromise]) as any;
+      const result = await Promise.race([openaiPromise, timeoutPromise]);
       
       console.log("OpenAI result received:", result);
       console.log("Result type:", typeof result);
       console.log("Result structure:", JSON.stringify(result, null, 2));
       
       // Check if OpenAI returned an error
-      if (result && typeof result === 'object' && result.error) {
+      if (result && typeof result === 'object' && 'error' in result && result.error && typeof result.error === 'object' && 'message' in result.error) {
         console.error("OpenAI returned error:", result.error);
         
         // Return fallback data with error details
@@ -86,7 +86,7 @@ export async function GET(req: NextRequest) {
       }
       
       // Check if we have content to parse
-      if (!result || typeof result !== 'object' || !result.choices || !result.choices[0]) {
+      if (!result || typeof result !== 'object' || !('choices' in result) || !Array.isArray(result.choices) || !result.choices[0] || !('message' in result.choices[0]) || !('content' in result.choices[0].message)) {
         console.error("OpenAI returned invalid result structure:", result);
         throw new Error("OpenAI returned invalid result structure");
       }

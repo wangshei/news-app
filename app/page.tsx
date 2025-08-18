@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+
 import { Plus } from "lucide-react"
 import Sidebar from "@/components/Sidebar"
 import HeaderDate from "@/components/HeaderDate"
@@ -12,18 +12,21 @@ import ExpandableCard from "@/components/ExpandableCard"
 import { useNewsletter } from "@/hooks/useNewsletter"
 import { useHeadlines } from "@/hooks/useHeadlines"
 import { CATEGORIES } from "@/config/categories"
+import { getCategoryColor } from "@/utils/categoryColors"
 
 export default function HomePage() {
   const [isAddColumnModalOpen, setIsAddColumnModalOpen] = useState(false)
-  const [newColumnName, setNewColumnName] = useState("")
-  const [categories, setCategories] = useState(["科技", "社会", "经济", "政治"])
+
+  // Default visible list: first three from config
+  const defaultThree = CATEGORIES.slice(0,3).map(c=>c.id)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
 
   
   // Use the centralized newsletter hook
   const { newsletter, loading: newsletterLoading, error: newsletterError, status, cacheKey } = useNewsletter()
   
   // Use the centralized headlines hook
-  const { headlines: headlinesData, loading: headlinesLoading, error: headlinesError } = useHeadlines()
+  const { headlines: headlinesData, loading: headlinesLoading } = useHeadlines()
   
   // Runtime sanity check
   useEffect(() => {
@@ -36,50 +39,36 @@ export default function HomePage() {
   }, [newsletter]);
 
   const openAddColumnDialog = () => {
-    if (categories.length < 6) {
-      setNewColumnName("")
-      setIsAddColumnModalOpen(true)
-    }
+    setIsAddColumnModalOpen(true)
   }
 
-  const handleAddCategory = () => {
-    if (newColumnName.trim() && categories.length < 6) {
-      setCategories([...categories, newColumnName.trim()])
-      setIsAddColumnModalOpen(false)
-      setNewColumnName("")
-    }
+  const handleAddCategory = (id: string) => {
+    setSelectedIds(prev => {
+      if (prev.includes(id)) return prev
+      const updated = [...prev, id]
+      try { localStorage.setItem('kanbanSelected', JSON.stringify(updated)) } catch {}
+      console.log(`[KANBAN] user added category ${id}`)
+      return updated
+    })
+    setIsAddColumnModalOpen(false)
   }
 
   const handleCancelAddCategory = () => {
     setIsAddColumnModalOpen(false)
-    setNewColumnName("")
   }
 
-  // Headlines data is now used directly in getNewsItemsForCategory
-
-
-
   // Transform headlines data for Kanban columns
-  const getNewsItemsForCategory = (category: string) => {
+  const getNewsItemsForCategory = (categoryId: string) => {
     if (!headlinesData) return []
-    
-    // Map Chinese category names to config categories
-    const categoryMap: { [key: string]: string } = {
-      "科技": "tech",
-      "社会": "society", 
-      "经济": "economy"
-    }
-    
-    const mappedCategory = categoryMap[category]
-    if (!mappedCategory) return []
-    
-    // Find the column for this category
-    const categoryColumn = headlinesData.columns.find(col => col.category === category)
+    const meta = CATEGORIES.find(c=>c.id===categoryId)
+    if (!meta) return []
+    // Find the column by display label returned from API
+    const categoryColumn = headlinesData.columns.find(col => col.category === meta.label)
     if (!categoryColumn) return []
     
-    // Transform cards to news items
-    return categoryColumn.cards.map((card: any, index: number) => ({
-      id: card.id || index + 1,
+    // Transform cards to news items - preserve original card.id
+    return categoryColumn.cards.map((card: { id: string; title: string; url: string }) => ({
+      id: card.id, // Use the real headline ID from the API
       time: "刚刚",
       title: card.title,
       hasImage: false,
@@ -129,7 +118,7 @@ export default function HomePage() {
                 size="sm"
                 className="add-category-btn w-8 h-8 rounded-full p-0 bg-transparent"
                 onClick={openAddColumnDialog}
-                disabled={categories.length >= 6}
+                
               >
                 <Plus className="w-4 h-4" />
               </Button>
@@ -137,26 +126,29 @@ export default function HomePage() {
 
             <div
               className={`kanban-grid grid gap-6 ${
-                categories.length === 1
+                ([...defaultThree, ...selectedIds]).length === 1
                   ? "grid-cols-1"
-                  : categories.length === 2
+                  : ([...defaultThree, ...selectedIds]).length === 2
                     ? "grid-cols-2"
-                    : categories.length === 3
+                    : ([...defaultThree, ...selectedIds]).length === 3
                       ? "grid-cols-3"
-                      : categories.length === 4
+                      : ([...defaultThree, ...selectedIds]).length === 4
                         ? "grid-cols-4"
-                        : categories.length === 5
+                        : ([...defaultThree, ...selectedIds]).length === 5
                           ? "grid-cols-5"
                           : "grid-cols-6"
               }`}
             >
-              {categories.map((category, index) => (
-                <KanbanColumn 
-                  key={index} 
-                  category={category} 
-                  newsItems={headlinesLoading ? [] : getNewsItemsForCategory(category)} 
-                />
-              ))}
+              {([...defaultThree, ...selectedIds]).map((categoryId, index) => {
+                const meta = CATEGORIES.find(c=>c.id===categoryId)
+                return (
+                  <KanbanColumn 
+                    key={`${categoryId}-${index}`} 
+                    category={meta ? meta.label : categoryId} 
+                    newsItems={headlinesLoading ? [] : getNewsItemsForCategory(categoryId)} 
+                  />
+                )
+              })}
             </div>
           </section>
         </div>
@@ -169,25 +161,23 @@ export default function HomePage() {
           <DialogHeader>
             <DialogTitle>添加新类别</DialogTitle>
           </DialogHeader>
-          <div className="py-4">
-            <Input
-              placeholder="请输入类别名称"
-              value={newColumnName}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewColumnName(e.target.value)}
-              onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
-                if (e.key === "Enter") {
-                  handleAddCategory()
-                }
-              }}
-              className="w-full"
-            />
+          <div className="py-2 space-y-2">
+            {CATEGORIES.filter(c => ![...defaultThree, ...selectedIds].includes(c.id)).map(c => (
+              <div key={c.id} className="flex items-center justify-between p-2 border border-[var(--border)] rounded">
+                <div className="flex items-center gap-2">
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getCategoryColor(c.id)}`}>{c.label}</span>
+                  <span className="text-sm text-[var(--text-secondary)]">{c.id}</span>
+                </div>
+                <Button size="sm" variant="outline" onClick={() => handleAddCategory(c.id)}>添加</Button>
+              </div>
+            ))}
+            {CATEGORIES.filter(c => ![...defaultThree, ...selectedIds].includes(c.id)).length === 0 && (
+              <div className="text-sm text-[var(--text-secondary)]">暂无可添加的类别</div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={handleCancelAddCategory}>
               取消
-            </Button>
-            <Button onClick={handleAddCategory} disabled={!newColumnName.trim()}>
-              添加
             </Button>
           </DialogFooter>
         </DialogContent>

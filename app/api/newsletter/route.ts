@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { CATEGORIES } from "@/config/categories";
 import { NEWS_SOURCES } from "@/config/newsSources";
-import { FALLBACK_DATA } from "@/config/fallbackData";
+
 import OpenAI from "openai";
 import * as cheerio from 'cheerio';
 
@@ -13,7 +13,7 @@ const cache: Record<string, DailyNewsletter> = {};
 
 // Timeout constants
 const PER_SOURCE_TIMEOUT_MS = 8_000;   // 8 seconds per source
-const ROUTE_TIMEOUT_MS = 25_000;       // 25 seconds total route timeout (increased from 15s)
+
 const RECENT_MS = 24 * 60 * 60 * 1000; // 12 hours for recency filter (relaxed from 4h)
 
 interface NewsSource {
@@ -84,10 +84,10 @@ export async function GET(req: NextRequest) {
     });
     
     // Timeout wrapper for individual source fetching
-    async function fetchWithTimeout(promise: Promise<any>, sourceName: string) {
+    async function fetchWithTimeout(promise: Promise<Headline[]>, sourceName: string) {
       return Promise.race([
         promise,
-        new Promise((_, reject) =>
+        new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error(`TIMEOUT ${sourceName}`)), PER_SOURCE_TIMEOUT_MS)
         )
       ]);
@@ -97,8 +97,10 @@ export async function GET(req: NextRequest) {
     async function buildNewsletter() {
       const trends: Trend[] = [];
       
-      // Process each category
-      for (const category of CATEGORIES) {
+      // Process only the first three active categories
+      const ACTIVE = CATEGORIES.slice(0, 3);
+      for (const categoryMeta of ACTIVE) {
+        const category = categoryMeta.id;
         console.log(`Processing category: ${category}`);
         
         const categoryHeadlines: Headline[] = [];
@@ -187,11 +189,14 @@ export async function GET(req: NextRequest) {
           if (summaryContent) {
             // Clean and parse summary
             let cleanContent = summaryContent.trim();
-            if (cleanContent.startsWith('```json')) {
-              cleanContent = cleanContent.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-            }
-            if (cleanContent.startsWith('```')) {
-              cleanContent = cleanContent.replace(/^```\s*/, '').replace(/\s*```$/, '');
+            // Remove any code fences anywhere
+            cleanContent = cleanContent.replace(/```json|```/g, '').trim();
+            if (cleanContent.startsWith('{') === false) {
+              // Try to extract the first JSON object
+              const jsonMatch = cleanContent.match(/\{[\s\S]*\}/);
+              if (jsonMatch) {
+                cleanContent = jsonMatch[0];
+              }
             }
             
             try {
@@ -203,13 +208,33 @@ export async function GET(req: NextRequest) {
               console.log(`✅ Successfully generated summary for ${category}:`, { title: categoryTitle, summary: categorySummary, description: categoryDescription });
             } catch (parseError) {
               console.error(`Failed to parse summary for ${category}:`, parseError);
-              throw new Error(`Failed to parse summary for ${category}: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
+              // Graceful fallback: synthesize from headlines instead of throwing
+              const fallbackTop = finalHeadlines[0]?.title || `${categoryMeta.label}今日焦点`;
+              categoryTitle = (fallbackTop.length > 20) ? fallbackTop.slice(0, 20) : fallbackTop;
+              categorySummary = `${categoryMeta.label}领域热点：${fallbackTop}`.slice(0, 40);
+              const topDescriptions = finalHeadlines.slice(0, 3).map(h => `- ${h.title}`).join('\n');
+              categoryDescription = `今日主要动态：\n${topDescriptions}`;
+              console.log(`🛟 Used fallback summary for ${category}`);
             }
+          } else {
+            // No content returned; use fallback
+            const fallbackTop = finalHeadlines[0]?.title || `${categoryMeta.label}今日焦点`;
+            categoryTitle = (fallbackTop.length > 20) ? fallbackTop.slice(0, 20) : fallbackTop;
+            categorySummary = `${categoryMeta.label}领域热点：${fallbackTop}`.slice(0, 40);
+            const topDescriptions = finalHeadlines.slice(0, 3).map(h => `- ${h.title}`).join('\n');
+            categoryDescription = `今日主要动态：\n${topDescriptions}`;
+            console.log(`🛟 Used fallback summary for ${category} (empty LLM response)`);
           }
-                  } catch (summaryError) {
-            console.error(`Failed to generate summary for ${category}:`, summaryError);
-            throw new Error(`Failed to generate summary for ${category}: ${summaryError instanceof Error ? summaryError.message : String(summaryError)}`);
-          }
+        } catch (summaryError) {
+          console.error(`Failed to generate summary for ${category}:`, summaryError);
+          // Final safety fallback if the LLM call itself failed
+          const fallbackTop = finalHeadlines[0]?.title || `${categoryMeta.label}今日焦点`;
+          categoryTitle = (fallbackTop.length > 20) ? fallbackTop.slice(0, 20) : fallbackTop;
+          categorySummary = `${categoryMeta.label}领域热点：${fallbackTop}`.slice(0, 40);
+          const topDescriptions = finalHeadlines.slice(0, 3).map(h => `- ${h.title}`).join('\n');
+          categoryDescription = `今日主要动态：\n${topDescriptions}`;
+          console.log(`🛟 Used fallback summary for ${category} (LLM failed)`);
+        }
         
         // Add category trend
         trends.push({
@@ -217,7 +242,7 @@ export async function GET(req: NextRequest) {
           title: categoryTitle,
           summary: categorySummary,
           description: categoryDescription,
-          category: getCategoryDisplayName(category),
+          category: categoryMeta.label,
           headlines: finalHeadlines
         });
         
@@ -238,7 +263,7 @@ export async function GET(req: NextRequest) {
       let overallSubtitle = "";
       
       try {
-        const trendTitles = trends.map(t => t.title).join('\n');
+
         const overallPrompt = `基于以下三个类别的趋势，生成简体中文整体的标题和副标题：
 
 社会类：${trends.find(t => t.id === 'society')?.title || 'N/A'}
@@ -379,7 +404,7 @@ async function fetchRSSHeadlines(source: NewsSource, category: string): Promise<
               timestamp = parsedDate.toISOString();
             }
             // If parsing fails, timestamp remains as "now"
-          } catch (dateError) {
+          } catch {
             // Use current time if date parsing fails
             console.warn(`Could not parse pubDate for ${source.name}: ${pubDate}`);
           }
@@ -431,7 +456,7 @@ async function fetchHTMLHeadlines(source: NewsSource, category: string): Promise
         try {
           const baseUrl = new URL(source.url);
           url = new URL(url, baseUrl).href;
-        } catch (urlError) {
+        } catch {
           console.warn(`Invalid URL for ${source.name}:`, url);
           url = '';
         }
@@ -469,11 +494,11 @@ function processHeadlines(headlines: Headline[]): Headline[] {
   const headlineGroups = new Map<string, Headline[]>();
   
   headlines.forEach(headline => {
-    const normalizedTitle = normalizeTitle(headline.title);
-    if (!headlineGroups.has(normalizedTitle)) {
-      headlineGroups.set(normalizedTitle, []);
+    const normalized = normalizeTitle(headline.title);
+    if (!headlineGroups.has(normalized)) {
+      headlineGroups.set(normalized, []);
     }
-    headlineGroups.get(normalizedTitle)!.push(headline);
+    headlineGroups.get(normalized)!.push(headline);
   });
   
   // Convert groups to deduplicated headlines
@@ -499,12 +524,4 @@ function processHeadlines(headlines: Headline[]): Headline[] {
   return deduplicatedHeadlines.slice(0, 5);
 }
 
-// Helper function to get Chinese category names
-function getCategoryDisplayName(category: string): string {
-  const categoryNames: { [key: string]: string } = {
-    society: '社会',
-    tech: '科技',
-    economy: '经济'
-  };
-  return categoryNames[category] || category;
-}
+

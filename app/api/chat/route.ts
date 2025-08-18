@@ -6,7 +6,7 @@ import OpenAI from "openai";
 const LLM_TIMEOUT_MS = 20_000; // 10 seconds per LLM call
 
 // Local cache for performance (populated when newsletter is fetched)
-const newsletterCache: Record<string, any> = {};
+const newsletterCache: Record<string, DailyNewsletter> = {};
 
 interface Headline {
   id: string;
@@ -14,6 +14,11 @@ interface Headline {
   source: string;
   url: string;
   timestamp: string;
+}
+
+interface ChatMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
 }
 
 interface Trend {
@@ -36,17 +41,11 @@ interface DailyNewsletter {
 interface ChatRequest {
   topicId: string;
   question: string;
-  history: any[];
+  history: ChatMessage[];
   init?: boolean; // Added for initialization requests
 }
 
-interface ChatResponse {
-  success: boolean;
-  data: {
-    answer: string;
-    nextQuestions: string[];
-  };
-}
+
 
 // Helper function for DeepSeek calls
 async function deepseekCall(prompt: string, maxTokens: number = 800) {
@@ -88,7 +87,7 @@ export async function POST(req: NextRequest) {
     
     // Parse request body
     const body: ChatRequest = await req.json();
-    const { topicId, question, history, init } = body;
+    const { topicId, question, init } = body;
     
     // Log request details
     console.log("[CHAT] req", body.topicId, body.question, init ? "INIT" : "");
@@ -153,7 +152,7 @@ export async function POST(req: NextRequest) {
     }
     
     // Find the current trend or headline
-    let trend = newsletter.trends.find((t: any) => t.id === topicId);
+    const trend = newsletter.trends.find((t: Trend) => t.id === topicId);
     let headline = null;
     
     // If no trend found, try to find a headline from headlines API
@@ -165,7 +164,7 @@ export async function POST(req: NextRequest) {
           const headlinesData = await headlinesResponse.json();
           // Search through all columns for the headline
           for (const column of headlinesData.columns) {
-            const found = column.cards.find((card: any) => card.id === topicId);
+            const found = column.cards.find((card: { id: string; title: string; source: string; url: string; category: string; timestamp: string }) => card.id === topicId);
             if (found) {
               headline = found;
               console.log(`[CHAT] Found headline: ${headline.title}`);
@@ -208,7 +207,7 @@ export async function POST(req: NextRequest) {
 标题: ${trend.title}
 摘要: ${trend.summary}
 相关新闻:
-${trend.headlines.map((h: any) => `• ${h.title}（${h.source}）`).join('\n')}
+${trend.headlines.map((h: Headline) => `• ${h.title}（${h.source}）`).join('\n')}
 
 请基于上述内容提出 2 个开放式、引人深思的问题，分别聚焦：
 1. 背景与成因分析
@@ -276,7 +275,7 @@ ${trend.headlines.map((h: any) => `• ${h.title}（${h.source}）`).join('\n')}
       let parsed;
       try { 
         parsed = JSON.parse(raw); 
-      } catch(e) {
+      } catch {
         console.warn("[CHAT] JSON parse fail (INIT)", raw);
         parsed = {
           answer: "基于当前趋势，我建议从以下几个角度深入探讨：",
@@ -309,7 +308,7 @@ ${trend.headlines.map((h: any) => `• ${h.title}（${h.source}）`).join('\n')}
 标题: ${trend.title}
 摘要: ${trend.summary}
 相关新闻:
-${trend.headlines.map((h: any) => `• ${h.title}（${h.source}）`).join('\n')}
+${trend.headlines.map((h: Headline) => `• ${h.title}（${h.source}）`).join('\n')}
 
 用户问题:
 "${body.question}"
