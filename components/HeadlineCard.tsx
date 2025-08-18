@@ -24,10 +24,10 @@ export default function HeadlineCard({ headline, summary, description, isAnalyzi
     <Card className="w-full max-w-3xl">
       <CardHeader>
         <div className="flex items-center justify-between">
-          <CardTitle className="text-xl font-bold text-[var(--text)] leading-tight">
+          <CardTitle className="text-xl font-bold text-[var(--)] leading-tight">
             {headline.title}
           </CardTitle>
-          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getCategoryColor(headline.category)}`}>
+          <span className={`px-2 py-1 rounded-full text-xs text-[var(--background)] font-medium ${getCategoryColor(headline.category)}`}>
             {headline.category}
           </span>
         </div>

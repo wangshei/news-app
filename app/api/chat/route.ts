@@ -111,9 +111,19 @@ export async function POST(req: NextRequest) {
     if (!newsletter) {
       try {
         console.log("[CHAT] No cached newsletter, fetching from newsletter API...");
-        const newsletterResponse = await fetch(`${req.headers.get('origin') || 'http://localhost:3000'}/api/newsletter`);
+        // Use relative URL since we're on the same server
+        const newsletterResponse = await fetch('/api/newsletter');
+        console.log("[CHAT] Newsletter API response status:", newsletterResponse.status);
+        
         if (newsletterResponse.ok) {
           const result = await newsletterResponse.json();
+          console.log("[CHAT] Newsletter API response:", {
+            hasStatus: !!result.status,
+            status: result.status,
+            hasTrends: !!result.trends,
+            trendsCount: result.trends?.length,
+            hasError: !!result.error
+          });
           
           // Check if newsletter is still building
           if (result.status === "building") {
@@ -136,7 +146,7 @@ export async function POST(req: NextRequest) {
           newsletter = result;
           console.log("[CHAT] Successfully fetched and cached newsletter data");
         } else {
-          console.log("[CHAT] Newsletter API returned error:", newsletterResponse.status);
+          console.log("[CHAT] Newsletter API returned error:", newsletterResponse.status, newsletterResponse.statusText);
         }
       } catch (fetchError) {
         console.log("[CHAT] Failed to fetch newsletter:", fetchError);
@@ -146,6 +156,13 @@ export async function POST(req: NextRequest) {
     // If newsletter is still undefined, return "data loading" response
     if (!newsletter) {
       console.log("[CHAT] No newsletter data available yet, returning loading response");
+      console.log("[CHAT] Newsletter state:", {
+        cached: !!newsletterCache[cacheKey],
+        cacheKey,
+        cacheKeys: Object.keys(newsletterCache),
+        hasOrigin: !!req.headers.get('origin'),
+        origin: req.headers.get('origin')
+      });
       return NextResponse.json({
         success: true,
         data: {
@@ -167,7 +184,8 @@ export async function POST(req: NextRequest) {
     if (!trend) {
       try {
         console.log(`[CHAT] Topic not found in trends, checking headlines API for: ${topicId}`);
-        const headlinesResponse = await fetch(`${req.headers.get('origin') || 'http://localhost:3000'}/api/headlines`);
+        // Use relative URL since we're on the same server
+        const headlinesResponse = await fetch('/api/headlines');
         if (headlinesResponse.ok) {
           const headlinesData = await headlinesResponse.json();
           // Search through all columns for the headline

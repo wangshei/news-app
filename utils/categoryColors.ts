@@ -16,10 +16,10 @@ export function getCategoryBackgroundColor(idOrLabel: string): string {
 // Returns the Tailwind text-* class for the category (converts bg-* to text-*)
 export function getCategoryTextColor(idOrLabel: string): string {
   const category = CATEGORIES.find(c => c.id === idOrLabel || c.label === idOrLabel);
-  if (!category?.color) return "text-gray-400";
+  if (!category?.textColor) return "text-gray-400";
   
-  // Convert bg-* to text-* (e.g., bg-rose-500 → text-rose-500)
-  return category.color.replace('bg-', 'text-');
+  // Use the textColor field directly
+  return category.textColor;
 }
 
 export function getAvailableCategories(): string[] {
