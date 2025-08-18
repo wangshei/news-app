@@ -7,7 +7,7 @@ A Next.js application that fetches and displays news using Eko AI.
 Create a `.env.local` file in your project root with:
 
 ```bash
-DEEPSEEK_API_KEY=your_deepseek_api_key_here
+DEEPSEEK_API=your_deepseek_api_key_here
 ```
 
 ## API Routes

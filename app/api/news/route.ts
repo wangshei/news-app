@@ -7,20 +7,20 @@ export async function GET(req: NextRequest) {
     console.log("API route called");
     
     // Check if API key is configured
-    if (!process.env.DEEPSEEK_API_KEY) {
-      console.error("DEEPSEEK_API_KEY not configured");
-      return NextResponse.json(
-        { error: "DEEPSEEK_API_KEY environment variable not configured" },
-        { status: 500 }
-      );
-    }
+      if (!process.env.DEEPSEEK_API) {
+    console.error("DEEPSEEK_API not configured");
+    return NextResponse.json(
+      { error: "DEEPSEEK_API environment variable not configured" },
+      { status: 500 }
+    );
+  }
     
-    console.log("API key found, length:", process.env.DEEPSEEK_API_KEY.length);
+    console.log("API key found, length:", process.env.DEEPSEEK_API.length);
 
         // For simple text generation, use direct LLM call instead of Eko
     // This avoids the agent system entirely
     const openai = new OpenAI({
-      apiKey: process.env.DEEPSEEK_API_KEY,
+      apiKey: process.env.DEEPSEEK_API,
       baseURL: "https://api.deepseek.com/v1",
       defaultHeaders: {
         "Content-Type": "application/json",

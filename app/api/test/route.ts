@@ -3,9 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 export async function GET(req: NextRequest) {
   try {
     const envCheck = {
-      DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY ? 
-        `Set (length: ${process.env.DEEPSEEK_API_KEY.length})` : 
-        "Not set",
+          DEEPSEEK_API: process.env.DEEPSEEK_API ?
+      `Set (length: ${process.env.DEEPSEEK_API.length})` :
+      "Not set",
       NODE_ENV: process.env.NODE_ENV,
       timestamp: new Date().toISOString()
     };

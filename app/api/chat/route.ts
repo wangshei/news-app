@@ -49,12 +49,12 @@ interface ChatRequest {
 
 // Helper function for DeepSeek calls
 async function deepseekCall(prompt: string, maxTokens: number = 800) {
-  if (!process.env.DEEPSEEK_API_KEY) {
-    throw new Error("DEEPSEEK_API_KEY not configured");
-  }
+      if (!process.env.DEEPSEEK_API) {
+      throw new Error("DEEPSEEK_API not configured");
+    }
 
   const openai = new OpenAI({
-    apiKey: process.env.DEEPSEEK_API_KEY,
+          apiKey: process.env.DEEPSEEK_API,
     baseURL: "https://api.deepseek.com/v1",
     defaultHeaders: {
       "Content-Type": "application/json",
@@ -77,10 +77,10 @@ export async function POST(req: NextRequest) {
     console.log("[CHAT] Request received");
     
     // Check if API key is configured
-    if (!process.env.DEEPSEEK_API_KEY) {
-      console.error("[CHAT] Missing DEEPSEEK_API_KEY");
+    if (!process.env.DEEPSEEK_API) {
+      console.error("[CHAT] Missing DEEPSEEK_API");
       return NextResponse.json(
-        { error: "DEEPSEEK_API_KEY environment variable not configured" },
+        { error: "DEEPSEEK_API environment variable not configured" },
         { status: 500 }
       );
     }
@@ -457,7 +457,7 @@ AI回答: "${parsed.answer}"
     
     // If DeepSeek call throws (key / quota / network), return fallback
     if (error instanceof Error && (
-      error.message.includes("DEEPSEEK_API_KEY") ||
+              error.message.includes("DEEPSEEK_API") ||
       error.message.includes("TIMEOUT") ||
       error.message.includes("LLM")
     )) {

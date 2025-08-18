@@ -51,12 +51,22 @@ interface DailyNewsletter {
 export async function GET(req: NextRequest) {
   try {
     console.log("Newsletter API called");
+    console.log("Environment check:", {
+      NODE_ENV: process.env.NODE_ENV,
+      hasDeepSeekKey: !!process.env.DEEPSEEK_API,
+      keyLength: process.env.DEEPSEEK_API?.length
+    });
     
     // Check if API key is configured
-    if (!process.env.DEEPSEEK_API_KEY) {
-      console.error("DEEPSEEK_API_KEY not configured");
+    if (!process.env.DEEPSEEK_API) {
+      console.error("DEEPSEEK_API not configured");
+      console.error("Environment variables:", {
+        NODE_ENV: process.env.NODE_ENV,
+        hasKey: !!process.env.DEEPSEEK_API,
+        keyLength: process.env.DEEPSEEK_API?.length
+      });
       return NextResponse.json(
-        { error: "DEEPSEEK_API_KEY environment variable not configured" },
+        { error: "DEEPSEEK_API environment variable not configured" },
         { status: 500 }
       );
     }
@@ -76,7 +86,7 @@ export async function GET(req: NextRequest) {
     
     // Initialize OpenAI for DeepSeek
     const openai = new OpenAI({
-      apiKey: process.env.DEEPSEEK_API_KEY,
+      apiKey: process.env.DEEPSEEK_API,
       baseURL: "https://api.deepseek.com/v1",
       defaultHeaders: {
         "Content-Type": "application/json",
