@@ -233,16 +233,26 @@ export async function POST(req: NextRequest) {
         const baseUrl = req.nextUrl.origin || 'http://localhost:3000';
         const headlinesResponse = await fetch(`${baseUrl}/api/headlines`);
         if (headlinesResponse.ok) {
-          const headlinesData = await headlinesResponse.json();
-          console.log("[CHAT] Headlines API response:", {
-            hasColumns: !!headlinesData.columns,
-            columnsCount: headlinesData.columns?.length
-          });
+                  const headlinesData = await headlinesResponse.json();
+        console.log("[CHAT] Headlines API response:", {
+          hasColumns: !!headlinesData.columns,
+          columnsCount: headlinesData.columns?.length,
+          columns: headlinesData.columns?.map((col: { category: string; cards?: Array<{ id: string }> }) => ({
+            category: col.category,
+            cardsCount: col.cards?.length,
+            cardIds: col.cards?.map((c: { id: string }) => c.id).slice(0, 3)
+          }))
+        });
           
           // Search through all columns for the headline
+          console.log(`[CHAT] Searching for headline with topicId: ${topicId}`);
           let foundHeadline = null;
           for (const column of headlinesData.columns) {
-            const found = column.cards.find((card: { id: string; title: string; source: string; url: string; category: string; timestamp: string }) => card.id === topicId);
+            console.log(`[CHAT] Searching in column: ${column.category}, cards: ${column.cards?.length}`);
+            const found = column.cards.find((card: { id: string; title: string; source: string; url: string; category: string; timestamp: string }) => {
+              console.log(`[CHAT] Checking card: ${card.id} vs ${topicId} (${card.id === topicId ? 'MATCH' : 'no match'})`);
+              return card.id === topicId;
+            });
             if (found) {
               foundHeadline = found;
               console.log(`[CHAT] Found headline: ${foundHeadline.title}`);
@@ -258,7 +268,11 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({
               success: true,
               data: {
-                answer: "抱歉，这条新闻已过期或不存在，请返回首页重新选择。",
+                answer: JSON.stringify({
+                  questions: ["新闻已过期", "请返回首页", "重新选择"],
+                  summary: "新闻已过期或不存在",
+                  description: "抱歉，这条新闻已过期或不存在，请返回首页重新选择。"
+                }),
                 nextQuestions: []
               }
             });
@@ -276,7 +290,11 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({
           success: true,
           data: {
-            answer: "抱歉，无法加载新闻内容，请稍后再试。",
+            answer: JSON.stringify({
+              questions: ["无法加载新闻", "请稍后再试", "系统错误"],
+              summary: "无法加载新闻内容",
+              description: "抱歉，无法加载新闻内容，请稍后再试。"
+            }),
             nextQuestions: []
           }
         });
@@ -294,7 +312,11 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({
           success: true,
           data: {
-            answer: "抱歉，该主题不存在，请返回首页重新选择。",
+            answer: JSON.stringify({
+              questions: ["主题不存在", "请返回首页", "重新选择"],
+              summary: "该主题不存在",
+              description: "抱歉，该主题不存在，请返回首页重新选择。"
+            }),
             nextQuestions: []
           }
         });
@@ -309,7 +331,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         success: true,
         data: {
-          answer: "我正在阅读今日新闻，请等我一下哦！",
+          answer: JSON.stringify({
+            questions: ["正在加载", "请稍等", "系统准备中"],
+            summary: "正在阅读今日新闻",
+            description: "我正在阅读今日新闻，请等我一下哦！"
+          }),
           nextQuestions: []
         }
       });
