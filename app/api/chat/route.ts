@@ -121,7 +121,11 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({
               success: true,
               data: {
-                answer: "数据生成中，请稍候。",
+                answer: JSON.stringify({
+                  questions: ["数据生成中，请稍候", "请等待新闻内容加载完成", "稍后再试"],
+                  summary: "数据生成中，请稍候",
+                  description: "新闻内容正在生成中，请稍后再试。"
+                }),
                 nextQuestions: []
               }
             });
@@ -145,7 +149,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         success: true,
         data: {
-          answer: "我正在获取今日新闻，请稍后再试。",
+          answer: JSON.stringify({
+            questions: ["正在获取今日新闻", "请稍后再试", "新闻内容加载中"],
+            summary: "正在获取今日新闻，请稍后再试",
+            description: "我正在获取今日新闻，请稍后再试。"
+          }),
           nextQuestions: []
         }
       });
@@ -387,7 +395,11 @@ ${trend.headlines.map((h: Headline) => `• ${h.title}（${h.source}）`).join('
       console.warn("[CHAT] JSON parse fail for response:", raw);
       console.warn("[CHAT] Parse error:", e);
       parsed = {
-        answer: "抱歉，AI服务暂时卡住了，请再试一次吧！",
+        answer: JSON.stringify({
+          questions: ["AI服务暂时卡住了", "请再试一次", "服务恢复中"],
+          summary: "AI服务暂时卡住了，请再试一次",
+          description: "抱歉，AI服务暂时卡住了，请再试一次吧！"
+        }),
         nextQuestions: ["请重新尝试", "换个问题问我"]
       };
     }
@@ -465,7 +477,11 @@ AI回答: "${parsed.answer}"
       const fallbackResponse = {
         success: true,
         data: {
-          answer: "抱歉😞，AI 服务暂时不可用，请稍后再试。",
+          answer: JSON.stringify({
+            questions: ["AI服务暂时不可用", "请稍后再试", "服务恢复中"],
+            summary: "AI服务暂时不可用，请稍后再试",
+            description: "抱歉😞，AI 服务暂时不可用，请稍后再试。"
+          }),
           nextQuestions: []
         }
       }

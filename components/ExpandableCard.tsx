@@ -1,7 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card"
 import { useRouter } from "next/navigation"
 import { useState, useEffect } from "react"
-import { getCategoryColor } from "@/utils/categoryColors"
+import { getCategoryTextColor } from "@/utils/categoryColors"
 import { FALLBACK_DATA } from "@/config/fallbackData"
 
 interface Headline {
@@ -33,6 +33,7 @@ interface TrendResponse {
   subtitle: string;
   bullets: Array<{
     id: string;
+    label: string; // Add label field for category name
     tagline: string;
   }>;
 }
@@ -57,6 +58,7 @@ export default function ExpandableCard({ title, cardContent, newsletter, cacheKe
         subtitle: newsletter.subtitle,
         bullets: newsletter.trends.map(trend => ({
           id: trend.id,
+          label: trend.category, // Include the Chinese category label
           tagline: trend.title
         }))
       };
@@ -131,14 +133,19 @@ export default function ExpandableCard({ title, cardContent, newsletter, cacheKe
                     const categoryNames: { [key: string]: string } = {
                       "society": "社会",
                       "tech": "科技", 
-                      "economy": "经济"
+                      "economy": "经济",
+                      "politics": "政治",
+                      "world": "国际",
+                      "culture": "文化",
+                      "sports": "体育",
+                      "life": "生活"
                     }
                     
                     const displayName = categoryNames[bullet.id] || bullet.id
                     
                     return (
                       <li key={bullet.id} className="text-sm text-[var(--text)]">
-                        • <span className={`${getCategoryColor(bullet.id)} font-medium`}> {displayName}: </span> {bullet.tagline}
+                        • <span className={`${getCategoryTextColor(bullet.id)} font-medium`}> {displayName}: </span> {bullet.tagline}
                       </li>
                     )
                   })

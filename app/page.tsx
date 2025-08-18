@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 
+
 import { Plus } from "lucide-react"
 import Sidebar from "@/components/Sidebar"
 import HeaderDate from "@/components/HeaderDate"
@@ -13,13 +14,28 @@ import { useNewsletter } from "@/hooks/useNewsletter"
 import { useHeadlines } from "@/hooks/useHeadlines"
 import { CATEGORIES } from "@/config/categories"
 import { getCategoryColor } from "@/utils/categoryColors"
+import { formatTimeAgo } from "@/utils/time"
 
 export default function HomePage() {
   const [isAddColumnModalOpen, setIsAddColumnModalOpen] = useState(false)
 
-  // Default visible list: first three from config
-  const defaultThree = CATEGORIES.slice(0,3).map(c=>c.id)
+  // User selected categories - no defaults
   const [selectedIds, setSelectedIds] = useState<string[]>([])
+  
+  // Load selected categories from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('kanbanSelected')
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (Array.isArray(parsed)) {
+          setSelectedIds(parsed)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load kanban selection from localStorage:', error)
+    }
+  }, [])
 
   
   // Use the centralized newsletter hook
@@ -31,26 +47,45 @@ export default function HomePage() {
   // Runtime sanity check
   useEffect(() => {
     if (newsletter?.trends) {
+      // Newsletter should only show first 3 active categories
+      const expectedCount = Math.min(selectedIds.length, 3);
       console.assert(
-        newsletter.trends.length === CATEGORIES.length,
-        "Newsletter trends mismatch"
+        newsletter.trends.length === expectedCount,
+        `Newsletter trends count mismatch: expected ${expectedCount}, got ${newsletter.trends.length}`
       );
     }
-  }, [newsletter]);
+  }, [newsletter, selectedIds]);
 
   const openAddColumnDialog = () => {
     setIsAddColumnModalOpen(true)
   }
 
-  const handleAddCategory = (id: string) => {
+  const handleToggleCategory = (id: string) => {
     setSelectedIds(prev => {
-      if (prev.includes(id)) return prev
-      const updated = [...prev, id]
-      try { localStorage.setItem('kanbanSelected', JSON.stringify(updated)) } catch {}
-      console.log(`[KANBAN] user added category ${id}`)
+      let updated: string[]
+      
+      if (prev.includes(id)) {
+        // Remove category
+        updated = prev.filter(catId => catId !== id)
+        console.log(`[KANBAN] user removed category ${id}`)
+      } else {
+        // Add category - check maximum limit
+        if (prev.length >= 5) {
+          console.log('[KANBAN] Cannot add category - maximum 5 categories allowed')
+          return prev // Prevent addition
+        }
+        updated = [...prev, id]
+        console.log(`[KANBAN] user added category ${id}`)
+      }
+      
+      try { 
+        localStorage.setItem('kanbanSelected', JSON.stringify(updated)) 
+      } catch (error) {
+        console.error('Failed to save kanban selection to localStorage:', error)
+      }
+      
       return updated
     })
-    setIsAddColumnModalOpen(false)
   }
 
   const handleCancelAddCategory = () => {
@@ -67,9 +102,9 @@ export default function HomePage() {
     if (!categoryColumn) return []
     
     // Transform cards to news items - preserve original card.id
-    return categoryColumn.cards.map((card: { id: string; title: string; url: string }) => ({
+    return categoryColumn.cards.map((card: { id: string; title: string; url: string; timestamp: string }) => ({
       id: card.id, // Use the real headline ID from the API
-      time: "刚刚",
+      time: formatTimeAgo(card.timestamp),
       title: card.title,
       hasImage: false,
       url: card.url
@@ -124,32 +159,46 @@ export default function HomePage() {
               </Button>
             </div>
 
-            <div
-              className={`kanban-grid grid gap-6 ${
-                ([...defaultThree, ...selectedIds]).length === 1
-                  ? "grid-cols-1"
-                  : ([...defaultThree, ...selectedIds]).length === 2
-                    ? "grid-cols-2"
-                    : ([...defaultThree, ...selectedIds]).length === 3
-                      ? "grid-cols-3"
-                      : ([...defaultThree, ...selectedIds]).length === 4
-                        ? "grid-cols-4"
-                        : ([...defaultThree, ...selectedIds]).length === 5
-                          ? "grid-cols-5"
-                          : "grid-cols-6"
-              }`}
-            >
-              {([...defaultThree, ...selectedIds]).map((categoryId, index) => {
-                const meta = CATEGORIES.find(c=>c.id===categoryId)
-                return (
-                  <KanbanColumn 
-                    key={`${categoryId}-${index}`} 
-                    category={meta ? meta.label : categoryId} 
-                    newsItems={headlinesLoading ? [] : getNewsItemsForCategory(categoryId)} 
-                  />
-                )
-              })}
-            </div>
+            {selectedIds.length === 0 ? (
+              <div className="text-center py-12 text-[var(--text-secondary)]">
+                <p className="mb-4">请选择要显示的新闻类别</p>
+                <Button 
+                  onClick={openAddColumnDialog}
+                  variant="outline"
+                  size="sm"
+                >
+                  选择类别
+                </Button>
+              </div>
+            ) : (
+              <div
+                className={`kanban-grid grid gap-6 ${
+                  selectedIds.length === 1
+                    ? "grid-cols-1"
+                    : selectedIds.length === 2
+                      ? "grid-cols-2"
+                      : selectedIds.length === 3
+                        ? "grid-cols-3"
+                        : selectedIds.length === 4
+                          ? "grid-cols-4"
+                          : selectedIds.length === 5
+                            ? "grid-cols-5"
+                            : "grid-cols-6"
+                }`}
+              >
+                {selectedIds.map((categoryId, index) => {
+                  const meta = CATEGORIES.find(c=>c.id===categoryId)
+                  return (
+                    <KanbanColumn 
+                      key={`${categoryId}-${index}`} 
+                      category={meta ? meta.label : categoryId} 
+                      categoryId={categoryId}
+                      newsItems={headlinesLoading ? [] : getNewsItemsForCategory(categoryId)} 
+                    />
+                  )
+                })}
+              </div>
+            )}
           </section>
         </div>
       </main>
@@ -162,18 +211,24 @@ export default function HomePage() {
             <DialogTitle>添加新类别</DialogTitle>
           </DialogHeader>
           <div className="py-2 space-y-2">
-            {CATEGORIES.filter(c => ![...defaultThree, ...selectedIds].includes(c.id)).map(c => (
-              <div key={c.id} className="flex items-center justify-between p-2 border border-[var(--border)] rounded">
-                <div className="flex items-center gap-2">
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getCategoryColor(c.id)}`}>{c.label}</span>
-                  <span className="text-sm text-[var(--text-secondary)]">{c.id}</span>
+            {CATEGORIES.map(c => {
+              const isSelected = selectedIds.includes(c.id)
+              return (
+                <div key={c.id} className="flex items-center justify-between p-2 border border-[var(--border)] rounded">
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium text-white ${getCategoryColor(c.id)}`}>{c.label}</span>
+                    <span className="text-sm text-[var(--text-secondary)]">{c.id}</span>
+                  </div>
+                  <Button 
+                    size="sm" 
+                    variant={isSelected ? "default" : "outline"}
+                    onClick={() => handleToggleCategory(c.id)}
+                  >
+                    {isSelected ? "已选择" : "选择"}
+                  </Button>
                 </div>
-                <Button size="sm" variant="outline" onClick={() => handleAddCategory(c.id)}>添加</Button>
-              </div>
-            ))}
-            {CATEGORIES.filter(c => ![...defaultThree, ...selectedIds].includes(c.id)).length === 0 && (
-              <div className="text-sm text-[var(--text-secondary)]">暂无可添加的类别</div>
-            )}
+              )
+            })}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={handleCancelAddCategory}>

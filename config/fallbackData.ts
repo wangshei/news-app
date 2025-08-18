@@ -58,9 +58,9 @@ export const FALLBACK_DATA = {
     title: "变动中的世界，视角决定答案",
     subtitle: "今日焦点：社会变革、芯片竞赛、全球货币新秩序",
     bullets: [
-      { id: "society", tagline: "年轻人涌向\"三线城市\"" },
-      { id: "tech", tagline: "国产 3nm AI 芯片面世" },
-      { id: "economy", tagline: "数字人民币跨境试点扩容" }
+      { id: "society", label: "社会", tagline: "年轻人涌向\"三线城市\"" },
+      { id: "tech", label: "科技", tagline: "国产 3nm AI 芯片面世" },
+      { id: "economy", label: "经济", tagline: "数字人民币跨境试点扩容" }
     ]
   },
   

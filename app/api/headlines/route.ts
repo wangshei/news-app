@@ -31,6 +31,8 @@ export async function GET(req: NextRequest) {
   try {
     console.log("[HEADLINES] Request received");
     
+    console.log('[HEADLINES] Categories configured:', CATEGORIES.map(c=>c.id).join(', '));
+    
     // Check cache first
     const today = new Date().toISOString().slice(0,10);
     
@@ -43,11 +45,11 @@ export async function GET(req: NextRequest) {
     // Try to use cached data if available and not expired
     const cachedData = cache[today];
     if (cachedData && Date.now() < cachedData.expiresAt) {
-      console.log("Returning cached headlines for:", today);
+      console.log("[HEADLINES] Returning cached headlines for:", today);
       return NextResponse.json(cachedData.data);
     }
     
-    console.log("Building fresh headlines for:", today);
+    console.log("[HEADLINES] Building fresh headlines for:", today);
     
     // Main headlines building function
     async function buildHeadlines() {
@@ -62,7 +64,7 @@ export async function GET(req: NextRequest) {
           continue;
         }
         const source = sources[0];
-        console.log(`[HEADLINES] Processing ${category} from ${source.name}`);
+        console.log(`[HEADLINES] Processing ${category} from ${source.name} (${source.url})`);
         
         try {
           let headlines: Headline[] = [];
@@ -103,6 +105,7 @@ export async function GET(req: NextRequest) {
         }
       }
       
+      console.log('[HEADLINES] Built columns preview:', columns.map(c=>`${c.category}:${c.cards.length}`).join(' | '));
       return columns;
     }
     
@@ -123,6 +126,7 @@ export async function GET(req: NextRequest) {
     };
     
     console.log(`[HEADLINES] OK – ${columns.length} categories built`);
+    console.log('[HEADLINES][RETURN] sending headlines', { date: responseData.date, columns: responseData.columns.length });
     
     return NextResponse.json(responseData);
     

@@ -71,18 +71,30 @@ export async function GET(req: NextRequest) {
       );
     }
     
-    // Check cache first with AM/PM window
+    // Determine active categories from query string (cats=id1,id2,...) or fallback to defaults
+    const catsParam = req.nextUrl.searchParams.get('cats') || '';
+    const requestedCats = catsParam
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean);
+    const validRequestedCats = Array.from(new Set(requestedCats)).filter(id => CATEGORIES.some(c => c.id === id));
+    // Rule: remove default for newsletter category if there are other selected categories - only use defaults if selected category <= 1
+    const effectiveCategoryIds = validRequestedCats.length > 1
+      ? validRequestedCats.slice(0, 3)
+      : CATEGORIES.slice(0, 3).map(c => c.id);
+
+    // Check cache first with AM/PM window and active categories in key
     const now = new Date();
     const yyyyMMdd = (d: Date) => d.toISOString().slice(0,10);
     const window = now.getHours() < 12 ? "AM" : "PM";
-    const cacheKey = `${yyyyMMdd(now)}-${window}`;
+    const cacheKey = `${yyyyMMdd(now)}-${window}-${effectiveCategoryIds.join('|')}`;
     
     if (cache[cacheKey] && !req.nextUrl.searchParams.get("force")) {
       console.log("[NEWSLETTER] cache hit", cacheKey);
       return NextResponse.json(cache[cacheKey]);
     }
     
-    console.log("[NEWSLETTER] building fresh newsletter for:", cacheKey);
+    console.log("[NEWSLETTER] building fresh newsletter for:", cacheKey, 'categories:', effectiveCategoryIds.join(','));
     
     // Initialize OpenAI for DeepSeek
     const openai = new OpenAI({
@@ -107,19 +119,28 @@ export async function GET(req: NextRequest) {
     async function buildNewsletter() {
       const trends: Trend[] = [];
       
-      // Process only the first three active categories
-      const ACTIVE = CATEGORIES.slice(0, 3);
-      for (const categoryMeta of ACTIVE) {
+      // Build active categories list from effectiveCategoryIds
+      const activeCategories = CATEGORIES.filter(c => effectiveCategoryIds.includes(c.id));
+      console.log(`[NEWSLETTER] Processing ${activeCategories.length} active categories:`, activeCategories.map(c => c.id).join(', '));
+      
+      // Process only active categories
+      for (const categoryMeta of activeCategories) {
         const category = categoryMeta.id;
-        console.log(`Processing category: ${category}`);
+        console.log(`[NEWSLETTER] Processing category: ${category}`);
         
         const categoryHeadlines: Headline[] = [];
         const sources: NewsSource[] = NEWS_SOURCES[category as keyof typeof NEWS_SOURCES] || [];
         
-        // Fetch headlines from each source in the category
+        if (sources.length === 0) {
+          console.log(`[NEWSLETTER] Skip ${category} - no sources configured`);
+          continue;
+        }
+        
+        // Try each source until we get headlines
+        let hasHeadlines = false;
         for (const source of sources) {
           try {
-            console.log(`Fetching from ${source.name}: ${source.url}`);
+            console.log(`[NEWSLETTER] Trying source ${source.name}: ${source.url}`);
             
             let headlines: Headline[] = [];
             
@@ -130,7 +151,7 @@ export async function GET(req: NextRequest) {
                 console.log(`[NEWSLETTER] OK ${source.name} - ${headlines.length} headlines`);
               } catch (rssError) {
                 console.warn(`[NEWSLETTER] FAIL ${source.name}:`, rssError instanceof Error ? rssError.message : String(rssError));
-                continue;
+                continue; // Try next source
               }
             } else {
               // Fetch HTML and parse with Cheerio
@@ -139,7 +160,7 @@ export async function GET(req: NextRequest) {
                 console.log(`[NEWSLETTER] OK ${source.name} - ${headlines.length} headlines`);
               } catch (htmlError) {
                 console.warn(`[NEWSLETTER] FAIL ${source.name}:`, htmlError instanceof Error ? htmlError.message : String(htmlError));
-                continue;
+                continue; // Try next source
               }
             }
             
@@ -150,12 +171,25 @@ export async function GET(req: NextRequest) {
               return headlineTime >= twelveHoursAgo;
             });
             
-            categoryHeadlines.push(...recentHeadlines);
+            if (recentHeadlines.length > 0) {
+              categoryHeadlines.push(...recentHeadlines);
+              hasHeadlines = true;
+              console.log(`[NEWSLETTER] Successfully got ${recentHeadlines.length} recent headlines from ${source.name}`);
+              break; // Found headlines, no need to try other sources
+            } else {
+              console.log(`[NEWSLETTER] No recent headlines from ${source.name}, trying next source`);
+            }
             
           } catch (sourceError) {
             console.warn(`[NEWSLETTER] FAIL ${source.name}:`, sourceError instanceof Error ? sourceError.message : String(sourceError));
             continue;
           }
+        }
+        
+        // Skip this category if no headlines were found from any source
+        if (!hasHeadlines || categoryHeadlines.length === 0) {
+          console.log(`[NEWSLETTER] Skip ${category} - no headlines from any source`);
+          continue;
         }
         
         // Deduplicate and score headlines
@@ -197,6 +231,7 @@ export async function GET(req: NextRequest) {
           
           const summaryContent = summaryResult.choices[0]?.message?.content;
           if (summaryContent) {
+            console.log(`[NEWSLETTER][PARSE] raw summary for ${category}:`, String(summaryContent).slice(0, 200));
             // Clean and parse summary
             let cleanContent = summaryContent.trim();
             // Remove any code fences anywhere
@@ -208,6 +243,7 @@ export async function GET(req: NextRequest) {
                 cleanContent = jsonMatch[0];
               }
             }
+            console.log(`[NEWSLETTER][PARSE] cleaned summary JSON for ${category}:`, cleanContent.slice(0, 200));
             
             try {
               const parsed = JSON.parse(cleanContent);
@@ -259,14 +295,20 @@ export async function GET(req: NextRequest) {
         console.log(`✅ Successfully processed category ${category} with ${finalHeadlines.length} headlines`);
       }
       
-      // Integrity check: ensure each category has headlines before proceeding
-      for (const trend of trends) {
-        if (trend.headlines.length === 0) {
-          throw new Error(`Category ${trend.id} has no headlines - cannot build newsletter`);
-        }
+      // Check if we have any trends at all
+      if (trends.length === 0) {
+        throw new Error(`No categories could be processed - all sources failed or returned no headlines`);
       }
       
-      console.log(`✅ All categories have headlines - proceeding with DeepSeek summarization`);
+      console.log(`✅ Successfully processed ${trends.length} categories with headlines`);
+      
+      // Log which categories were processed vs skipped
+      const processedCategoryIds = trends.map(t => t.id);
+      const skippedCategoryIds = activeCategories.filter(c => !processedCategoryIds.includes(c.id)).map(c => c.id);
+      if (skippedCategoryIds.length > 0) {
+        console.log(`[NEWSLETTER] Skipped categories: ${skippedCategoryIds.join(', ')} (no headlines from any source)`);
+      }
+      console.log(`[NEWSLETTER] Final newsletter will contain: ${processedCategoryIds.join(', ')}`);
       
       // Generate overall title and subtitle using DeepSeek
       let overallTitle = "";
@@ -274,14 +316,12 @@ export async function GET(req: NextRequest) {
       
       try {
 
-        const overallPrompt = `基于以下三个类别的趋势，生成简体中文整体的标题和副标题：
+        const overallPrompt = `基于以下${trends.length}个类别的趋势，生成简体中文整体的标题和副标题：
 
-社会类：${trends.find(t => t.id === 'society')?.title || 'N/A'}
-科技类：${trends.find(t => t.id === 'tech')?.title || 'N/A'}
-经济类：${trends.find(t => t.id === 'economy')?.title || 'N/A'}
+${trends.map(t => `${t.category}类：${t.title || 'N/A'}`).join('\n')}
 
 要求：
-1. title: 一句话概括今天三大类的共同趋势，20字以内
+1. title: 一句话概括今天这些类别的共同趋势，20字以内
 2. subtitle: 更长的描述，40-60字
 
 请用严格的JSON格式返回：
@@ -300,6 +340,7 @@ export async function GET(req: NextRequest) {
         
         const overallContent = overallResult.choices[0]?.message?.content;
         if (overallContent) {
+          console.log(`[NEWSLETTER][PARSE] raw overall summary:`, String(overallContent).slice(0, 200));
           // Clean and parse overall summary
           let cleanContent = overallContent.trim();
           if (cleanContent.startsWith('```json')) {
@@ -308,6 +349,7 @@ export async function GET(req: NextRequest) {
           if (cleanContent.startsWith('```')) {
             cleanContent = cleanContent.replace(/^```\s*/, '').replace(/\s*```$/, '');
           }
+          console.log(`[NEWSLETTER][PARSE] cleaned overall JSON:`, cleanContent.slice(0, 200));
           
           try {
             const parsed = JSON.parse(cleanContent);
@@ -354,6 +396,7 @@ export async function GET(req: NextRequest) {
     // Remove the overall route timeout wrapper - rely only on per-source timeouts
     try {
       const result = await buildNewsletter();
+      console.log('[NEWSLETTER][RETURN] sending newsletter', { id: result.id, date: result.date, trends: result.trends.length });
       return NextResponse.json(result);
     } catch (error) {
       console.error("Newsletter build failed:", error);

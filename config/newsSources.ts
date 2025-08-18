@@ -10,7 +10,7 @@ export const NEWS_SOURCES = {
   ],
 
   politics: [
-    { name: "人民网-政治频道", url: "http://www.people.com.cn/rss/politics.xml", rss: true }
+    { name: "中央社-政治", url: "https://feeds.feedburner.com/rsscna/politics", rss: true }
   ],
   
   world: [

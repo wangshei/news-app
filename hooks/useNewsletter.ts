@@ -49,7 +49,23 @@ export function useNewsletter() {
         setError(null);
         setStatus(null);
         
-        const response = await fetch('/api/newsletter');
+        // Read user's selected categories from localStorage (same as Quick Browse)
+        let catsQuery = '';
+        try {
+          const saved = typeof window !== 'undefined' ? localStorage.getItem('kanbanSelected') : null;
+          if (saved) {
+            const selected: unknown = JSON.parse(saved);
+            if (Array.isArray(selected) && selected.length > 0) {
+              const ids = selected.filter((id): id is string => typeof id === 'string');
+              if (ids.length > 0) {
+                catsQuery = `?cats=${encodeURIComponent(ids.join(','))}`;
+              }
+            }
+          }
+        } catch (e) {
+          // Ignore localStorage errors and proceed without cats query
+        }
+        const response = await fetch(`/api/newsletter${catsQuery}`);
         if (!response.ok) {
           throw new Error('Failed to fetch newsletter');
         }
