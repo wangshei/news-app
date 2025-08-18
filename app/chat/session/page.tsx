@@ -5,10 +5,14 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { ArrowLeft, MessageCircle, RotateCcw, User, Bot, ChevronDown, ChevronUp, ArrowRight, ArrowLeftCircle, ArrowRightCircle } from "lucide-react"
+import { ArrowLeft, MessageCircle, RotateCcw, User, Bot, ChevronDown, ChevronUp, ArrowRight, ArrowLeftCircle, ArrowRightCircle, ExternalLink } from "lucide-react"
 import { getCategoryColor, getCategoryBackgroundColor } from "@/utils/categoryColors"
 import { useNewsletter } from "@/hooks/useNewsletter"
 import { CATEGORIES } from "@/config/categories"
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+
+
 
 interface Headline {
   id: string;
@@ -22,6 +26,7 @@ interface Trend {
   id: string;
   title: string;
   summary: string;
+  description?: string; // Optional expanded description
   category: string;
   headlines: Headline[];
 }
@@ -39,6 +44,7 @@ interface ChatMessage {
   role: 'user' | 'system';
   content: string;
   timestamp: Date;
+  followUpQuestions?: string[]; // Added for follow-up questions
 }
 
 export default function ChatSessionPage() {
@@ -57,6 +63,8 @@ export default function ChatSessionPage() {
   ])
   const [suggest, setSuggest] = useState<string[]>([])
   const [isInitializing, setIsInitializing] = useState(false)
+  const [showFollowUpQuestions, setShowFollowUpQuestions] = useState(false)
+  const [expandedSource, setExpandedSource] = useState<string | null>(null)
   
   // Use the centralized newsletter hook
   const { newsletter, loading, error } = useNewsletter()
@@ -78,11 +86,17 @@ export default function ChatSessionPage() {
       setFollowUpQuestions(["探索事件起源", "预测近期影响", "探讨未来走向"]) // Reset to default questions
       setSuggest([]) // Reset suggestions
       setIsInitializing(false) // Reset initialization state
+      setShowFollowUpQuestions(false) // Reset follow-up questions display
       
       // Initialize with AI-generated suggestions for the current trend
       initializeTrendSuggestions()
     }
   }, [newsletter, currentIdx])
+
+    // Toggle source expansion
+  const toggleSourceExpansion = (sourceId: string) => {
+    setExpandedSource(expandedSource === sourceId ? null : sourceId)
+  }
 
   // Initialize AI-generated suggestions for the current trend
   const initializeTrendSuggestions = async () => {
@@ -93,34 +107,6 @@ export default function ChatSessionPage() {
     setIsInitializing(true)
     
     try {
-      // First, get the expert description
-      const expertResponse = await fetch('/api/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          topicId: currentTrend.id,
-          question: "请以专家视角总结这个趋势的背景、现状和重要性",
-          history: [],
-          init: true
-        })
-      })
-      
-      if (expertResponse.ok) {
-        const expertResult = await expertResponse.json()
-        if (expertResult.data?.answer) {
-          // Add expert system message to history
-          const expertMessage: ChatMessage = {
-            id: `expert-${Date.now()}`,
-            role: 'system',
-            content: expertResult.data.answer,
-            timestamp: new Date()
-          }
-          setHistory([expertMessage])
-          console.log("[INIT] Expert description added:", expertResult.data.answer)
-        }
-      }
       
       // Then, get the initial suggestions
       const suggestionsResponse = await fetch('/api/chat', {
@@ -143,6 +129,36 @@ export default function ChatSessionPage() {
           console.log("[INIT] Generated suggestions:", suggestionsResult.data.nextQuestions)
         }
       }
+      // First, get the expert description
+      const expertResponse = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          topicId: currentTrend.id,
+          question: "请以专家视角总结这个趋势的背景、现状和重要性",
+          history: [],
+          init: true
+        })
+      })
+      
+      if (expertResponse.ok) {
+        const expertResult = await expertResponse.json()
+        if (expertResult.data?.answer) {
+          // Add expert system message to history
+          const expertMessage: ChatMessage = {
+            id: `expert-${Date.now()}`,
+            role: 'system',
+            content: expertResult.data.answer,
+            timestamp: new Date(),
+            followUpQuestions: expertResult.data?.nextQuestions || []
+          }
+          setHistory([expertMessage])
+          console.log("[INIT] Expert description added:", expertResult.data.answer)
+        }
+      }
+      
     } catch (error) {
       console.error('[INIT] Failed to initialize suggestions:', error)
       // Fall back to default suggestions
@@ -195,19 +211,34 @@ export default function ChatSessionPage() {
         if (result.data?.nextQuestions && Array.isArray(result.data.nextQuestions)) {
           setFollowUpQuestions(result.data.nextQuestions)
           setSuggest(result.data.nextQuestions || [])
+        } else {
+          // No more questions available, clear suggestions
+          setSuggest([])
         }
         
         const systemMessage: ChatMessage = {
           id: `system-${Date.now()}`,
           role: 'system',
           content: result.data?.answer || "抱歉，暂时无法回答。",
-          timestamp: new Date()
+          timestamp: new Date(),
+          followUpQuestions: result.data?.nextQuestions || []
         }
         setHistory(prev => [...prev, systemMessage])
         
         // Console logs for debugging
         console.log("[RECV answer]", result.data?.answer);
         console.log("[RECV next]", result.data?.nextQuestions);
+        
+        // Generate follow-up questions separately for better performance
+        if (result.data?.nextQuestions && result.data.nextQuestions.length > 0) {
+          // Hide follow-up questions initially
+          setShowFollowUpQuestions(false);
+          
+          // Show follow-up questions after 3 seconds
+          setTimeout(() => {
+            setShowFollowUpQuestions(true);
+          }, 3000);
+        }
       } else {
         // Handle API error response
         const errorData = await response.json().catch(() => ({}))
@@ -217,7 +248,8 @@ export default function ChatSessionPage() {
           id: `system-${Date.now()}`,
           role: 'system',
           content: `抱歉，服务器返回错误 (${response.status})。请稍后再试。`,
-          timestamp: new Date()
+          timestamp: new Date(),
+          followUpQuestions: []
         }
         setHistory(prev => [...prev, errorMessage])
       }
@@ -227,7 +259,8 @@ export default function ChatSessionPage() {
         id: `system-${Date.now()}`,
         role: 'system',
         content: "抱歉，网络连接出现问题。请检查网络连接后重试。",
-        timestamp: new Date()
+        timestamp: new Date(),
+        followUpQuestions: []
       }
       setHistory(prev => [...prev, errorMessage])
     } finally {
@@ -244,13 +277,15 @@ export default function ChatSessionPage() {
       setFollowUpQuestions(["探索事件起源", "预测近期影响", "探讨未来走向"]) // Reset questions
       setSuggest([]) // Reset suggestions
       setIsInitializing(false) // Reset initialization state
+      setShowFollowUpQuestions(false) // Reset follow-up questions display
     } else {
       // All topics completed
       const completionMessage: ChatMessage = {
         id: `system-${Date.now()}`,
         role: 'system',
         content: "已讨论完毕，感谢！",
-        timestamp: new Date()
+        timestamp: new Date(),
+        followUpQuestions: []
       }
       setHistory(prev => [...prev, completionMessage])
     }
@@ -263,6 +298,7 @@ export default function ChatSessionPage() {
       setFollowUpQuestions(["探索事件起源", "预测近期影响", "探讨未来走向"]) // Reset questions
       setSuggest([]) // Reset suggestions
       setIsInitializing(false) // Reset initialization state
+      setShowFollowUpQuestions(false) // Reset follow-up questions display
     }
   }
 
@@ -275,7 +311,16 @@ export default function ChatSessionPage() {
   }
 
   // Check if user can proceed to next topic
-  const canProceedToNextTopic = history.length > 2 && !isLoadingResponse && suggest.length === 0
+  // Show button when: user has had at least 1 Q&A exchange AND not currently loading
+  const canProceedToNextTopic = history.length > 2 && !isLoadingResponse
+  
+  // Debug logging
+  console.log("[DEBUG] Navigation state:", {
+    historyLength: history.length,
+    isLoading: isLoadingResponse,
+    canProceed: canProceedToNextTopic,
+    suggestLength: suggest.length
+  })
 
   if (loading) {
     return (
@@ -384,17 +429,91 @@ export default function ChatSessionPage() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                <p className="text-sm text-[var(--text)] leading-relaxed">
+                <p className="text-md text-[var(--text)] leading-relaxed">
                   {currentTopic.summary}
                 </p>
+                
+                {/* Expanded Description - Show if available */}
+                {currentTopic.description && (
+                  <div className="">
+                    <div className="text-sm text-[var(--text-secondary)] leading-relaxed">
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        strong: ({node, ...props}) => <strong className="text-[var(--accent)] font-semibold" {...props} />,
+                        em: ({node, ...props}) => <em className="text-[var(--text-secondary)]" {...props} />,
+                        ul: ({node, ...props}) => <ul className="list-disc pl-6 my-2 space-y-1" {...props} />,
+                        ol: ({node, ...props}) => <ol className="list-decimal pl-6 my-2 space-y-1" {...props} />,
+                        li: ({node, ...props}) => <li className="mb-1" {...props} />,
+                        p: ({node, ...props}) => <p className="mb-2 leading-relaxed" {...props} />,
+                        blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-[var(--accent)] pl-4 italic text-[var(--text)] my-2" {...props} />,
+                        code: ({node, ...props}) => <code className="bg-[var(--accent)] px-1 rounded text-[var(--accent)]" {...props} />,
+                      }}
+                    >
+                      {String(currentTopic.description)}
+                    </ReactMarkdown>
+                    </div>
+                  </div>
+                )}
+                 {/* Expandable Sources - Below suggested questions */}
+          {currentTopic.headlines && currentTopic.headlines.length > 0 && (
+            <div className="flex justify-start">
+              <div className="w-full max-w-3xl">
+                <h4 className="text-sm font-medium text-[var(--text)] mb-3">相关来源：</h4>
+                
+                {/* Source Buttons - Horizontal Layout */}
+                <div className="flex flex-wrap gap-2">
+                  {currentTopic.headlines.map((headline, index) => (
+                    <Button
+                      key={`${headline.source}-${index}`}
+                      variant="outline"
+                      size="sm"
+                      className={`h-6 px-2 text-xs ${
+                        expandedSource === `${headline.source}-${index}` 
+                          ? 'bg-[var(--accent)] text-white border-[var(--accent)]' 
+                          : 'bg-transparent hover:bg-[var(--surface-alt)]'
+                      }`}
+                      onClick={() => toggleSourceExpansion(`${headline.source}-${index}`)}
+                    >
+                      {headline.source}
+                    </Button>
+                  ))}
+                </div>
+                
+                {/* Expanded Source Content */}
+                {expandedSource && (
+                  <div className="mt-3 p-3 bg-[var(--surface-alt)] rounded border border-[var(--border)]">
+                    <div className="flex items-center justify-between mb-2">
+                      <h5 className="text-xs font-medium text-[var(--text)]">
+                        {currentTopic.headlines.find((h, i) => `${h.source}-${i}` === expandedSource)?.source}
+                      </h5>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-5 px-1 text-xs"
+                        onClick={() => window.open(currentTopic.headlines.find((h, i) => `${h.source}-${i}` === expandedSource)?.url, '_blank')}
+                      >
+                        <ExternalLink className="w-3 h-3 mr-1" />
+                        阅读原文
+                      </Button>
+                    </div>
+                    <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                      {currentTopic.headlines.find((h, i) => `${h.source}-${i}` === expandedSource)?.title}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
               </CardContent>
+              
             </Card>
           </div>
 
           {/* Suggested Questions - Right below the topic card */}
           <div className="flex justify-start">
             <div className="w-full max-w-3xl">
-              <h4 className="text-sm font-medium text-[var(--text)] mb-3">建议的问题：</h4>
+              <h4 className="text-sm font-medium text-[var(--text)] mb-3">板凳上的思考：</h4>
               <div className="space-y-2">
                 {isInitializing ? (
                   <div className="text-center py-4">
@@ -423,8 +542,10 @@ export default function ChatSessionPage() {
             </div>
           </div>
 
+         
+
           {/* Chat Messages */}
-          {history.map((message) => (
+          {history.map((message, messageIndex) => (
             <div
               key={message.id}
               className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} items-end space-x-2`}
@@ -435,13 +556,30 @@ export default function ChatSessionPage() {
                 </div>
               )}
               <div
-                className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                className={`max-w-xl lg:max-w-md px-4 py-2 rounded-lg ${
                   message.role === 'user'
                     ? 'bg-[var(--primary-blue)] text-white'
                     : 'bg-[var(--surface-alt)] text-[var(--text)]'
                 }`}
               >
-                <p className="text-sm whitespace-pre-line">{message.content}</p>
+                <div className="text-sm break-words">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      strong: ({node, ...props}) => <strong className="text-[var(--accent)] font-semibold" {...props} />,
+                      em: ({node, ...props}) => <em className="text-[var(--text-secondary)]" {...props} />,
+                      ul: ({node, ...props}) => <ul className="list-disc pl-6 my-2 space-y-1" {...props} />,
+                      ol: ({node, ...props}) => <ol className="list-decimal pl-6 my-2 space-y-1" {...props} />,
+                      li: ({node, ...props}) => <li className="mb-1" {...props} />,
+                      p: ({node, ...props}) => <p className="mb-2 leading-relaxed" {...props} />,
+                      blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-[var(--accent)] pl-4 italic text-[var(--text)] my-2" {...props} />,
+                      code: ({node, ...props}) => <code className="bg-[var(--surface-alt)] px-1 rounded text-[var(--accent)]" {...props} />,
+                    }}
+                  >
+                    {message.content}
+
+                  </ReactMarkdown>
+                  </div>
                 <p className="text-xs opacity-70 mt-1">
                   {message.timestamp.toLocaleTimeString()}
                 </p>
@@ -453,6 +591,39 @@ export default function ChatSessionPage() {
               )}
             </div>
           ))}
+          
+          {/* Follow-up Questions - Only show after second bot message */}
+          {(() => {
+            const lastMessage = history[history.length - 1];
+            const systemMessageCount = history.filter(m => m.role === 'system').length;
+            
+            return systemMessageCount >= 2 && 
+                   lastMessage && 
+                   lastMessage.role === 'system' && 
+                   lastMessage.followUpQuestions && 
+                   lastMessage.followUpQuestions.length > 0 && 
+                   showFollowUpQuestions ? (
+              <div className="flex justify-start">
+                <div className="w-full max-w-3xl">
+                  <p className="text-xs text-[var(--text-secondary)] mb-3">继续讨论：</p>
+                  <div className="flex flex-wrap gap-2">
+                    {lastMessage.followUpQuestions.map((question, index) => (
+                      <Button
+                        key={index}
+                        variant="outline"
+                        size="sm"
+                        className="h-auto py-2 px-3 text-xs border-[var(--border)] hover:bg-[var(--surface)] max-w-full"
+                        onClick={() => sendQuestion(question)}
+                        disabled={isLoadingResponse}
+                      >
+                        <span className="break-words text-left">{question}</span>
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : null;
+          })()}
 
           {/* Loading indicator */}
           {isLoadingResponse && (
@@ -461,7 +632,7 @@ export default function ChatSessionPage() {
                 <Bot className="w-4 h-4 text-white" />
               </div>
               <div className="w-full max-w-3xl px-4 py-2 rounded-lg bg-[var(--surface-alt)] text-[var(--text)]">
-                <p className="text-sm">思考中...</p>
+                <p className="text-sm max-w-xs">思考中...</p>
               </div>
             </div>
           )}

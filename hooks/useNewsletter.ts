@@ -12,6 +12,7 @@ interface Trend {
   id: string;
   title: string;
   summary: string;
+  description?: string; // Optional expanded description
   category: string;
   headlines: Headline[];
 }

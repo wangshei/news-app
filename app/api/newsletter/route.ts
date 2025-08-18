@@ -35,6 +35,7 @@ interface Trend {
   id: string;
   title: string;
   summary: string;
+  description?: string; // Optional expanded description
   category: string;
   headlines: Headline[];
 }
@@ -150,10 +151,21 @@ export async function GET(req: NextRequest) {
         // Generate trend summary for this category using DeepSeek
         let categoryTitle = "";
         let categorySummary = "";
+        let categoryDescription = "";
         
         try {
           const titles = finalHeadlines.slice(0, 5).map(h => h.title).join('\n');
-          const summaryPrompt = `以下是${category}领域最新头条：\n${titles}\n请给出一句trend标题和40字简体中文概要，返回JSON {title,summary}`;
+          const summaryPrompt = `以下是${category}领域最新头条：\n${titles}\n请给出：
+1. 一句trend标题（20字以内）
+2. 40字简体中文概要
+3. 100字左右的详细说明，分析背景、影响和趋势,用 Markdown 格式输出答案，适当加粗关键词、分段、使用列表等，让内容更易读
+
+返回JSON格式：
+{
+  "title": "标题",
+  "summary": "概要",
+  "description": "详细说明"
+}`;
 
           const summaryResult = await openai.chat.completions.create({
             model: "deepseek-chat",
@@ -178,12 +190,14 @@ export async function GET(req: NextRequest) {
               const parsed = JSON.parse(cleanContent);
               categoryTitle = parsed.title || `Default ${category} title`;
               categorySummary = parsed.summary || `Default ${category} summary`;
+              categoryDescription = parsed.description || `Default ${category} description`;
               
-              console.log(`✅ Successfully generated summary for ${category}:`, { title: categoryTitle, summary: categorySummary });
+              console.log(`✅ Successfully generated summary for ${category}:`, { title: categoryTitle, summary: categorySummary, description: categoryDescription });
             } catch (parseError) {
               console.error(`Failed to parse summary for ${category}:`, parseError);
               categoryTitle = `Default ${category} title`;
               categorySummary = `Default ${category} summary`;
+              categoryDescription = `Default ${category} description`;
             }
           }
         } catch (summaryError) {
@@ -197,6 +211,7 @@ export async function GET(req: NextRequest) {
           id: category,
           title: categoryTitle,
           summary: categorySummary,
+          description: categoryDescription,
           category: getCategoryDisplayName(category),
           headlines: finalHeadlines.length > 0 ? finalHeadlines : [{
             id: `${category}-fallback`,

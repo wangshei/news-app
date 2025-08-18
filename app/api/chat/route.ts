@@ -20,6 +20,7 @@ interface Trend {
   id: string;
   title: string;
   summary: string;
+  description?: string; // Optional expanded description
   category: string;
   headlines: Headline[];
 }
@@ -48,7 +49,7 @@ interface ChatResponse {
 }
 
 // Helper function for DeepSeek calls
-async function deepseekCall(prompt: string, maxTokens: number = 256) {
+async function deepseekCall(prompt: string, maxTokens: number = 800) {
   if (!process.env.DEEPSEEK_API_KEY) {
     throw new Error("DEEPSEEK_API_KEY not configured");
   }
@@ -162,15 +163,16 @@ export async function POST(req: NextRequest) {
 相关新闻:
 ${trend.headlines.map((h: any) => `• ${h.title}（${h.source}）`).join('\n')}
 
-请基于上述内容提出 3 个开放式、引人深思的问题，分别聚焦：
+请基于上述内容提出 2 个开放式、引人深思的问题，分别聚焦：
 1. 背景与成因分析
 2. 当前影响评估
-3. 未来趋势预测
+
+要求：每个问题控制在10-25个字符以内，简洁明了。
 
 严格返回 JSON:
 {
   "answer": "基于当前趋势，我建议从以下几个角度深入探讨：",
-  "nextQuestions": ["问题1", "问题2", "问题3"]
+  "nextQuestions": ["问题1", "问题2"]
 }`;
 
       console.log(`[CHAT] Sending init prompt to DeepSeek for topic: ${topicId}`);
@@ -229,12 +231,12 @@ ${trend.headlines.map((h: any) => `• ${h.title}（${h.source}）`).join('\n')}
 用户问题:
 "${body.question}"
 
-请用中文详细回答用户问题（约150字），并基于上述内容和用户提问，提出2个开放式后续问题，鼓励用户进一步思考和提问。
+请用中文详细回答用户问题（约150字）。请用 Markdown 格式输出答案，适当加粗关键词、分段、使用列表、引用等，让内容更易读。如需强调风险、建议、结论，可用**加粗**或>引用。
 
 严格返回 JSON:
 {
   "answer": "...",
-  "nextQuestions": ["...", "..."]
+  "nextQuestions": ["问题1", "问题2"]
 }`;
 
     console.log(`[CHAT] Sending prompt to DeepSeek for topic: ${topicId}`);
@@ -244,7 +246,7 @@ ${trend.headlines.map((h: any) => `• ${h.title}（${h.source}）`).join('\n')}
     let raw: string;
     try {
       raw = await Promise.race([
-        deepseekCall(prompt, 256),
+        deepseekCall(prompt, 800),
         new Promise<string>((_, r) => setTimeout(() => r("TIMEOUT"), LLM_TIMEOUT_MS))
       ]);
       const duration = Date.now() - startTime;
@@ -266,14 +268,57 @@ ${trend.headlines.map((h: any) => `• ${h.title}（${h.source}）`).join('\n')}
     } catch(e) {
       console.warn("[CHAT] JSON parse fail", raw);
       parsed = {
-        answer: "抱歉，AI服务暂时卡住了，请再试一次吧！",
-        nextQuestions: []
+        answer: "抱歉，AI服务暂时卡住了，请再试一次吧！"
       };
     }
     
+    // Generate follow-up questions separately for better performance
+    const followUpPrompt = `基于以下对话内容，生成2个开放式后续问题：
+
+用户问题: "${body.question}"
+AI回答: "${parsed.answer}"
+
+要求：
+1. 每个问题控制在10-25个字符以内
+2. 问题要简洁明了，鼓励用户进一步思考
+3. 基于AI回答内容，自然延续对话
+
+严格返回 JSON:
+{
+  "nextQuestions": ["问题1", "问题2"]
+}`;
+
+    console.log(`[CHAT] Generating follow-up questions for topic: ${topicId}`);
+    
+    let followUpQuestions: string[] = [];
+    try {
+      const followUpRaw = await Promise.race([
+        deepseekCall(followUpPrompt, 128),
+        new Promise<string>((_, r) => setTimeout(() => r("TIMEOUT"), 5000)) // Shorter timeout for follow-ups
+      ]);
+      
+      if (followUpRaw !== "TIMEOUT") {
+        const followUpParsed = JSON.parse(followUpRaw);
+        if (followUpParsed.nextQuestions && Array.isArray(followUpParsed.nextQuestions)) {
+          followUpQuestions = followUpParsed.nextQuestions;
+          console.log("[CHAT] Generated follow-up questions:", followUpQuestions);
+        }
+      }
+    } catch (followUpError) {
+      console.warn("[CHAT] Failed to generate follow-up questions:", followUpError);
+      // Use default questions if generation fails
+      followUpQuestions = ["请继续提问", "还有其他问题吗"];
+    }
+    
     // Log result and send
-    console.log("[CHAT] OK", parsed.nextQuestions);
-    return NextResponse.json({ success: true, data: parsed });
+    console.log("[CHAT] OK", followUpQuestions);
+    return NextResponse.json({ 
+      success: true, 
+      data: {
+        answer: parsed.answer,
+        nextQuestions: followUpQuestions
+      }
+    });
     
   } catch (error) {
     console.error(`[CHAT] FAIL - Route error:`, error);
