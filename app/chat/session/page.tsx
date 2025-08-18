@@ -1,16 +1,15 @@
 'use client'
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { ArrowLeft, MessageCircle, RotateCcw, User, Bot, ChevronDown, ChevronUp, ArrowRight, ArrowLeftCircle, ArrowRightCircle, ExternalLink } from "lucide-react"
-import { getCategoryColor, getCategoryBackgroundColor } from "@/utils/categoryColors"
+import { ArrowLeft, ChevronDown, ChevronUp } from "lucide-react"
+import { getCategoryColor } from "@/utils/categoryColors"
 import { useNewsletter } from "@/hooks/useNewsletter"
 import { CATEGORIES } from "@/config/categories"
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import ChatLayout from "@/components/ChatLayout"
+import TrendCard from "@/components/TrendCard"
+import ChatWindow from "@/components/ChatWindow"
 
 
 
@@ -51,19 +50,13 @@ export default function ChatSessionPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const topicIdx = parseInt(searchParams.get('topicIdx') || '0')
-  const messagesEndRef = useRef<HTMLDivElement>(null)
   
   const [currentIdx, setCurrentIdx] = useState(topicIdx)
   const [history, setHistory] = useState<ChatMessage[]>([])
-  const [inputValue, setInputValue] = useState('')
   const [isLoadingResponse, setIsLoadingResponse] = useState(false)
   const [newsletterExpanded, setNewsletterExpanded] = useState(false)
-  const [followUpQuestions, setFollowUpQuestions] = useState<string[]>([
-    "探索事件起源", "预测近期影响", "探讨未来走向"
-  ])
   const [suggest, setSuggest] = useState<string[]>([])
   const [isInitializing, setIsInitializing] = useState(false)
-  const [showFollowUpQuestions, setShowFollowUpQuestions] = useState(false)
   const [expandedSource, setExpandedSource] = useState<string | null>(null)
   
   // Use the centralized newsletter hook
@@ -83,10 +76,8 @@ export default function ChatSessionPage() {
   useEffect(() => {
     if (newsletter?.trends && newsletter.trends.length > 0 && currentIdx < newsletter.trends.length) {
       setHistory([]) // Start with empty history for each topic
-      setFollowUpQuestions(["探索事件起源", "预测近期影响", "探讨未来走向"]) // Reset to default questions
       setSuggest([]) // Reset suggestions
       setIsInitializing(false) // Reset initialization state
-      setShowFollowUpQuestions(false) // Reset follow-up questions display
       
       // Initialize with AI-generated suggestions for the current trend
       initializeTrendSuggestions()
@@ -168,9 +159,7 @@ export default function ChatSessionPage() {
     }
   }
 
-  useEffect(() => {
-    scrollToBottom()
-  }, [history])
+  // Auto-scroll is now handled by ChatWindow component
 
   const sendQuestion = async (question: string) => {
     if (!newsletter?.trends || newsletter.trends.length === 0 || currentIdx >= newsletter.trends.length) return
@@ -209,7 +198,7 @@ export default function ChatSessionPage() {
         
         // Update follow-up questions with dynamic ones from the API
         if (result.data?.nextQuestions && Array.isArray(result.data.nextQuestions)) {
-          setFollowUpQuestions(result.data.nextQuestions)
+          // Follow-up questions are now handled by ChatWindow component
           setSuggest(result.data.nextQuestions || [])
         } else {
           // No more questions available, clear suggestions
@@ -232,12 +221,9 @@ export default function ChatSessionPage() {
         // Generate follow-up questions separately for better performance
         if (result.data?.nextQuestions && result.data.nextQuestions.length > 0) {
           // Hide follow-up questions initially
-          setShowFollowUpQuestions(false);
+          // Follow-up questions display is now handled by ChatWindow component
           
-          // Show follow-up questions after 3 seconds
-          setTimeout(() => {
-            setShowFollowUpQuestions(true);
-          }, 3000);
+                      // Follow-up questions display is now handled by ChatWindow component
         }
       } else {
         // Handle API error response
@@ -274,10 +260,8 @@ export default function ChatSessionPage() {
     if (currentIdx < newsletter.trends.length - 1) {
       setCurrentIdx(prev => prev + 1)
       setHistory([]) // Clear history for new topic
-      setFollowUpQuestions(["探索事件起源", "预测近期影响", "探讨未来走向"]) // Reset questions
       setSuggest([]) // Reset suggestions
       setIsInitializing(false) // Reset initialization state
-      setShowFollowUpQuestions(false) // Reset follow-up questions display
     } else {
       // All topics completed
       const completionMessage: ChatMessage = {
@@ -295,16 +279,12 @@ export default function ChatSessionPage() {
     if (currentIdx > 0) {
       setCurrentIdx(prev => prev - 1)
       setHistory([]) // Clear history for new topic
-      setFollowUpQuestions(["探索事件起源", "预测近期影响", "探讨未来走向"]) // Reset questions
       setSuggest([]) // Reset suggestions
       setIsInitializing(false) // Reset initialization state
-      setShowFollowUpQuestions(false) // Reset follow-up questions display
     }
   }
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }
+  // Auto-scroll is now handled by ChatWindow component
 
   const handleBack = () => {
     router.push('/chat/select')
@@ -355,7 +335,7 @@ export default function ChatSessionPage() {
           <div className="flex items-center justify-between mb-4">
             <Button variant="ghost" onClick={handleBack}>
               <ArrowLeft className="w-4 h-4 mr-2" />
-              返回选择
+              返回预览
             </Button>
             <div className="text-sm text-[var(--text-secondary)]">
               话题 {currentIdx + 1} / {newsletter.trends.length}: {currentTopic.category}
@@ -417,97 +397,11 @@ export default function ChatSessionPage() {
         <div className="max-w-5xl mx-auto space-y-6">
           {/* Current Topic Info */}
           <div className="flex justify-start">
-            <Card className={`w-full max-w-3xl ${getCategoryBackgroundColor(currentTopic.category)}`}>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-xl font-bold text-[var(--text)] leading-tight">
-                    {currentTopic.title}
-                  </CardTitle>
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${getCategoryColor(currentTopic.category)}`}>
-                    {currentTopic.category}
-                  </span>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <p className="text-md text-[var(--text)] leading-relaxed">
-                  {currentTopic.summary}
-                </p>
-                
-                {/* Expanded Description - Show if available */}
-                {currentTopic.description && (
-                  <div className="">
-                    <div className="text-sm text-[var(--text-secondary)] leading-relaxed">
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      components={{
-                        strong: ({node, ...props}) => <strong className="text-[var(--accent)] font-semibold" {...props} />,
-                        em: ({node, ...props}) => <em className="text-[var(--text-secondary)]" {...props} />,
-                        ul: ({node, ...props}) => <ul className="list-disc pl-6 my-2 space-y-1" {...props} />,
-                        ol: ({node, ...props}) => <ol className="list-decimal pl-6 my-2 space-y-1" {...props} />,
-                        li: ({node, ...props}) => <li className="mb-1" {...props} />,
-                        p: ({node, ...props}) => <p className="mb-2 leading-relaxed" {...props} />,
-                        blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-[var(--accent)] pl-4 italic text-[var(--text)] my-2" {...props} />,
-                        code: ({node, ...props}) => <code className="bg-[var(--accent)] px-1 rounded text-[var(--accent)]" {...props} />,
-                      }}
-                    >
-                      {String(currentTopic.description)}
-                    </ReactMarkdown>
-                    </div>
-                  </div>
-                )}
-                 {/* Expandable Sources - Below suggested questions */}
-          {currentTopic.headlines && currentTopic.headlines.length > 0 && (
-            <div className="flex justify-start">
-              <div className="w-full max-w-3xl">
-                <h4 className="text-sm font-medium text-[var(--text)] mb-3">相关来源：</h4>
-                
-                {/* Source Buttons - Horizontal Layout */}
-                <div className="flex flex-wrap gap-2">
-                  {currentTopic.headlines.map((headline, index) => (
-                    <Button
-                      key={`${headline.source}-${index}`}
-                      variant="outline"
-                      size="sm"
-                      className={`h-6 px-2 text-xs ${
-                        expandedSource === `${headline.source}-${index}` 
-                          ? 'bg-[var(--accent)] text-white border-[var(--accent)]' 
-                          : 'bg-transparent hover:bg-[var(--surface-alt)]'
-                      }`}
-                      onClick={() => toggleSourceExpansion(`${headline.source}-${index}`)}
-                    >
-                      {headline.source}
-                    </Button>
-                  ))}
-                </div>
-                
-                {/* Expanded Source Content */}
-                {expandedSource && (
-                  <div className="mt-3 p-3 bg-[var(--surface-alt)] rounded border border-[var(--border)]">
-                    <div className="flex items-center justify-between mb-2">
-                      <h5 className="text-xs font-medium text-[var(--text)]">
-                        {currentTopic.headlines.find((h, i) => `${h.source}-${i}` === expandedSource)?.source}
-                      </h5>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-5 px-1 text-xs"
-                        onClick={() => window.open(currentTopic.headlines.find((h, i) => `${h.source}-${i}` === expandedSource)?.url, '_blank')}
-                      >
-                        <ExternalLink className="w-3 h-3 mr-1" />
-                        阅读原文
-                      </Button>
-                    </div>
-                    <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                      {currentTopic.headlines.find((h, i) => `${h.source}-${i}` === expandedSource)?.title}
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-              </CardContent>
-              
-            </Card>
+            <TrendCard 
+              trend={currentTopic}
+              expandedSource={expandedSource}
+              onToggleSource={toggleSourceExpansion}
+            />
           </div>
 
           {/* Suggested Questions - Right below the topic card */}
@@ -544,152 +438,18 @@ export default function ChatSessionPage() {
 
          
 
-          {/* Chat Messages */}
-          {history.map((message, messageIndex) => (
-            <div
-              key={message.id}
-              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} items-end space-x-2`}
-            >
-              {message.role === 'system' && (
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-[var(--accent)] flex items-center justify-center">
-                  <Bot className="w-4 h-4 text-white" />
-                </div>
-              )}
-              <div
-                className={`max-w-xl lg:max-w-md px-4 py-2 rounded-lg ${
-                  message.role === 'user'
-                    ? 'bg-[var(--primary-blue)] text-white'
-                    : 'bg-[var(--surface-alt)] text-[var(--text)]'
-                }`}
-              >
-                <div className="text-sm break-words">
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    components={{
-                      strong: ({node, ...props}) => <strong className="text-[var(--accent)] font-semibold" {...props} />,
-                      em: ({node, ...props}) => <em className="text-[var(--text-secondary)]" {...props} />,
-                      ul: ({node, ...props}) => <ul className="list-disc pl-6 my-2 space-y-1" {...props} />,
-                      ol: ({node, ...props}) => <ol className="list-decimal pl-6 my-2 space-y-1" {...props} />,
-                      li: ({node, ...props}) => <li className="mb-1" {...props} />,
-                      p: ({node, ...props}) => <p className="mb-2 leading-relaxed" {...props} />,
-                      blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-[var(--accent)] pl-4 italic text-[var(--text)] my-2" {...props} />,
-                      code: ({node, ...props}) => <code className="bg-[var(--surface-alt)] px-1 rounded text-[var(--accent)]" {...props} />,
-                    }}
-                  >
-                    {message.content}
-
-                  </ReactMarkdown>
-                  </div>
-                <p className="text-xs opacity-70 mt-1">
-                  {message.timestamp.toLocaleTimeString()}
-                </p>
-              </div>
-              {message.role === 'user' && (
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-[var(--primary-blue)] flex items-center justify-center">
-                  <User className="w-4 h-4 text-white" />
-                </div>
-              )}
-            </div>
-          ))}
-          
-          {/* Follow-up Questions - Only show after second bot message */}
-          {(() => {
-            const lastMessage = history[history.length - 1];
-            const systemMessageCount = history.filter(m => m.role === 'system').length;
-            
-            return systemMessageCount >= 2 && 
-                   lastMessage && 
-                   lastMessage.role === 'system' && 
-                   lastMessage.followUpQuestions && 
-                   lastMessage.followUpQuestions.length > 0 && 
-                   showFollowUpQuestions ? (
-              <div className="flex justify-start">
-                <div className="w-full max-w-3xl">
-                  <p className="text-xs text-[var(--text-secondary)] mb-3">继续讨论：</p>
-                  <div className="flex flex-wrap gap-2">
-                    {lastMessage.followUpQuestions.map((question, index) => (
-                      <Button
-                        key={index}
-                        variant="outline"
-                        size="sm"
-                        className="h-auto py-2 px-3 text-xs border-[var(--border)] hover:bg-[var(--surface)] max-w-full"
-                        onClick={() => sendQuestion(question)}
-                        disabled={isLoadingResponse}
-                      >
-                        <span className="break-words text-left">{question}</span>
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ) : null;
-          })()}
-
-          {/* Loading indicator */}
-          {isLoadingResponse && (
-            <div className="flex justify-start items-end space-x-2">
-              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-[var(--accent)] flex items-center justify-center">
-                <Bot className="w-4 h-4 text-white" />
-              </div>
-              <div className="w-full max-w-3xl px-4 py-2 rounded-lg bg-[var(--surface-alt)] text-[var(--text)]">
-                <p className="text-sm max-w-xs">思考中...</p>
-              </div>
-            </div>
-          )}
-
-          {/* Topic Navigation Buttons */}
-          {canProceedToNextTopic && (
-            <div className="flex justify-center space-x-4">
-              {/* Previous Topic Button - Show if not first topic */}
-              {currentIdx > 0 && (
-                <Button
-                  onClick={handlePreviousTopic}
-                  variant="outline"
-                  className="px-6"
-                >
-                  <ArrowLeftCircle className="w-4 h-4 mr-2" />
-                  上一话题
-                </Button>
-              )}
-              
-              {/* Next Topic Button */}
-              <Button
-                onClick={handleNextTopic}
-                variant="outline"
-                className="px-6"
-              >
-                <ArrowRightCircle className="w-4 h-4 mr-2" />
-                {isLastTopic ? "结束对话" : "下一话题"}
-              </Button>
-            </div>
-          )}
-          
-          {/* Scroll reference for auto-scroll */}
-          <div ref={messagesEndRef} />
-        </div>
-      </div>
-
-      {/* Chat Input */}
-      <div className="fixed bottom-0 left-0 right-0 bg-[var(--surface)] border-t border-[var(--border)] p-4 z-50">
-        <div className="max-w-4xl mx-auto">
-          <div className="flex gap-2">
-            <Input
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              placeholder="输入您的问题..."
-              className="flex-1 border-0 shadow-none bg-transparent focus:ring-0 focus:border-0"
-              onKeyDown={(e) => e.key === 'Enter' && inputValue.trim() && sendQuestion(inputValue.trim())}
-              disabled={isLoadingResponse}
-            />
-            <Button 
-              onClick={() => inputValue.trim() && sendQuestion(inputValue.trim())}
-              className="bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white"
-              disabled={!inputValue.trim() || isLoadingResponse}
-            >
-              <MessageCircle className="w-4 h-4 mr-2" />
-              发送
-            </Button>
-          </div>
+          {/* Chat Window */}
+          <ChatWindow
+            mode="trend"
+            context={{ title: currentTopic.title }}
+            onSendMessage={sendQuestion}
+            messages={history}
+            isLoading={isLoadingResponse}
+            canProceedToNextTopic={canProceedToNextTopic}
+            onNextTopic={handleNextTopic}
+            onPreviousTopic={currentIdx > 0 ? handlePreviousTopic : undefined}
+            isLastTopic={isLastTopic}
+          />
         </div>
       </div>
     </div>

@@ -17,10 +17,10 @@ export default function HomePage() {
   const [isAddColumnModalOpen, setIsAddColumnModalOpen] = useState(false)
   const [newColumnName, setNewColumnName] = useState("")
   const [categories, setCategories] = useState(["科技", "社会", "经济", "政治"])
-  const [headlines, setHeadlines] = useState<any>(null)
+
   
   // Use the centralized newsletter hook
-  const { newsletter, loading: newsletterLoading, error: newsletterError } = useNewsletter()
+  const { newsletter, loading: newsletterLoading, error: newsletterError, status, cacheKey } = useNewsletter()
   
   // Use the centralized headlines hook
   const { headlines: headlinesData, loading: headlinesLoading, error: headlinesError } = useHeadlines()
@@ -55,37 +55,35 @@ export default function HomePage() {
     setNewColumnName("")
   }
 
-  // Use headlines data from the hook
-  useEffect(() => {
-    if (headlinesData) {
-      setHeadlines(headlinesData.columns.flatMap(col => col.headlines))
-    }
-  }, [headlinesData])
+  // Headlines data is now used directly in getNewsItemsForCategory
 
 
 
   // Transform headlines data for Kanban columns
   const getNewsItemsForCategory = (category: string) => {
-    if (!headlines) return []
+    if (!headlinesData) return []
     
+    // Map Chinese category names to config categories
     const categoryMap: { [key: string]: string } = {
       "科技": "tech",
       "社会": "society", 
-      "经济": "economy",
-      "政治": "politics"
+      "经济": "economy"
     }
     
     const mappedCategory = categoryMap[category]
     if (!mappedCategory) return []
     
-    const categoryHeadlines = headlines.filter((h: any) => h.category === mappedCategory)
+    // Find the column for this category
+    const categoryColumn = headlinesData.columns.find(col => col.category === category)
+    if (!categoryColumn) return []
     
-    return categoryHeadlines.map((headline: any, index: number) => ({
-      id: index + 1,
+    // Transform cards to news items
+    return categoryColumn.cards.map((card: any, index: number) => ({
+      id: card.id || index + 1,
       time: "刚刚",
-      title: headline.title,
+      title: card.title,
       hasImage: false,
-      url: headline.url
+      url: card.url
     }))
   }
 
@@ -107,12 +105,16 @@ export default function HomePage() {
               <div className="text-center py-8 text-[var(--text-secondary)]">
                 加载中...
               </div>
+            ) : status === "building" ? (
+              <div className="text-center py-8 text-[var(--text-secondary)]">
+                {cacheKey?.endsWith("AM") ? "早报生成中…" : "晚报生成中…"}
+              </div>
             ) : newsletterError ? (
               <div className="text-center py-8 text-red-500">
                 加载失败: {newsletterError}
               </div>
             ) : (
-              <ExpandableCard title="今日发现" newsletter={newsletter} />
+              <ExpandableCard title="今日发现" newsletter={newsletter} cacheKey={cacheKey} />
             )}
           </section>
 

@@ -37,7 +37,7 @@ export default function TopicSelectPage() {
   const router = useRouter()
   
   // Use the centralized newsletter hook
-  const { newsletter, loading, error } = useNewsletter()
+  const { newsletter, loading, error, status, cacheKey } = useNewsletter()
   
   // Runtime sanity check
   useEffect(() => {
@@ -66,6 +66,19 @@ export default function TopicSelectPage() {
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[var(--accent)] mx-auto mb-4"></div>
           <p className="text-[var(--text-secondary)]">加载中...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (status === "building") {
+    return (
+      <div className="min-h-screen bg-[var(--surface)] flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[var(--accent)] mx-auto mb-4"></div>
+          <p className="text-[var(--text-secondary)]">
+            {cacheKey?.endsWith("AM") ? "早报生成中…" : "晚报生成中…"}
+          </p>
         </div>
       </div>
     )

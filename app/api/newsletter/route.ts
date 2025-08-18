@@ -8,7 +8,7 @@ import * as cheerio from 'cheerio';
 
 
 
-// In-memory cache for today's newsletter
+// In-memory cache for twice-daily newsletter (AM/PM windows)
 const cache: Record<string, DailyNewsletter> = {};
 
 // Timeout constants
@@ -61,14 +61,18 @@ export async function GET(req: NextRequest) {
       );
     }
     
-    // Check cache first
-    const today = new Date().toISOString().slice(0,10);
-    if (cache[today] && !req.nextUrl.searchParams.get("force")) {
-      console.log("Returning cached newsletter for:", today);
-      return NextResponse.json(cache[today]);
+    // Check cache first with AM/PM window
+    const now = new Date();
+    const yyyyMMdd = (d: Date) => d.toISOString().slice(0,10);
+    const window = now.getHours() < 12 ? "AM" : "PM";
+    const cacheKey = `${yyyyMMdd(now)}-${window}`;
+    
+    if (cache[cacheKey] && !req.nextUrl.searchParams.get("force")) {
+      console.log("[NEWSLETTER] cache hit", cacheKey);
+      return NextResponse.json(cache[cacheKey]);
     }
     
-    console.log("Building fresh newsletter for:", today);
+    console.log("[NEWSLETTER] building fresh newsletter for:", cacheKey);
     
     // Initialize OpenAI for DeepSeek
     const openai = new OpenAI({
@@ -155,10 +159,14 @@ export async function GET(req: NextRequest) {
         
         try {
           const titles = finalHeadlines.slice(0, 5).map(h => h.title).join('\n');
-          const summaryPrompt = `以下是${category}领域最新头条：\n${titles}\n请给出：
-1. 一句trend标题（20字以内）
-2. 40字简体中文概要
-3. 100字左右的详细说明，分析背景、影响和趋势,用 Markdown 格式输出答案，适当加粗关键词、分段、使用列表等，让内容更易读
+          const summaryPrompt = `以下是${category}领域最新头条：\n${titles}\n你是一位具有宏观视野和行业洞察力的财经科技评论员，请从下列最新头条中判断
+1) 最核心的未来信号（Signal)——能预示中长期走向的关键变化；
+2) 推动该信号出现的主要驱动因素；
+3) 该信号可能带来的机会或风险。
+提炼出以下信息：
+1. 一句signal中文简体标题（20字以内）
+2. 40字简体中文概要说明
+3. 100字左右的详细说明分析，包括1-2个信号，2-3个驱动因素，2-3个未来机会/风险,用 Markdown 格式输出答案，适当加粗关键词、分段、使用列表等，让内容更易读
 
 返回JSON格式：
 {
@@ -175,7 +183,7 @@ export async function GET(req: NextRequest) {
             top_p: 0.9
           });
           
-          let summaryContent = summaryResult.choices[0]?.message?.content;
+          const summaryContent = summaryResult.choices[0]?.message?.content;
           if (summaryContent) {
             // Clean and parse summary
             let cleanContent = summaryContent.trim();
@@ -188,23 +196,20 @@ export async function GET(req: NextRequest) {
             
             try {
               const parsed = JSON.parse(cleanContent);
-              categoryTitle = parsed.title || `Default ${category} title`;
-              categorySummary = parsed.summary || `Default ${category} summary`;
-              categoryDescription = parsed.description || `Default ${category} description`;
+              categoryTitle = parsed.title;
+              categorySummary = parsed.summary;
+              categoryDescription = parsed.description;
               
               console.log(`✅ Successfully generated summary for ${category}:`, { title: categoryTitle, summary: categorySummary, description: categoryDescription });
             } catch (parseError) {
               console.error(`Failed to parse summary for ${category}:`, parseError);
-              categoryTitle = `Default ${category} title`;
-              categorySummary = `Default ${category} summary`;
-              categoryDescription = `Default ${category} description`;
+              throw new Error(`Failed to parse summary for ${category}: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
             }
           }
-        } catch (summaryError) {
-          console.error(`Failed to generate summary for ${category}:`, summaryError);
-          categoryTitle = `Default ${category} title`;
-          categorySummary = `Default ${category} summary`;
-        }
+                  } catch (summaryError) {
+            console.error(`Failed to generate summary for ${category}:`, summaryError);
+            throw new Error(`Failed to generate summary for ${category}: ${summaryError instanceof Error ? summaryError.message : String(summaryError)}`);
+          }
         
         // Add category trend
         trends.push({
@@ -213,17 +218,20 @@ export async function GET(req: NextRequest) {
           summary: categorySummary,
           description: categoryDescription,
           category: getCategoryDisplayName(category),
-          headlines: finalHeadlines.length > 0 ? finalHeadlines : [{
-            id: `${category}-fallback`,
-            title: `Fallback headline for ${category}`,
-            source: "Fallback Data",
-            url: `https://example.com/${category}-fallback`,
-            timestamp: new Date().toISOString()
-          }]
+          headlines: finalHeadlines
         });
         
         console.log(`✅ Successfully processed category ${category} with ${finalHeadlines.length} headlines`);
       }
+      
+      // Integrity check: ensure each category has headlines before proceeding
+      for (const trend of trends) {
+        if (trend.headlines.length === 0) {
+          throw new Error(`Category ${trend.id} has no headlines - cannot build newsletter`);
+        }
+      }
+      
+      console.log(`✅ All categories have headlines - proceeding with DeepSeek summarization`);
       
       // Generate overall title and subtitle using DeepSeek
       let overallTitle = "";
@@ -255,7 +263,7 @@ export async function GET(req: NextRequest) {
           top_p: 0.9
         });
         
-        let overallContent = overallResult.choices[0]?.message?.content;
+        const overallContent = overallResult.choices[0]?.message?.content;
         if (overallContent) {
           // Clean and parse overall summary
           let cleanContent = overallContent.trim();
@@ -286,10 +294,10 @@ export async function GET(req: NextRequest) {
       
       // Build the newsletter
       const newsletter: DailyNewsletter = {
-        id: "daily-" + new Date().toISOString().split('T')[0],
+        id: `daily-${cacheKey}`,
         title: overallTitle,
         subtitle: overallSubtitle,
-        date: new Date().toISOString().split('T')[0],
+        date: cacheKey,
         trends: trends
       };
       
@@ -299,9 +307,9 @@ export async function GET(req: NextRequest) {
         console.log(`  ${trend.category}: ${trend.headlines.length} headlines`);
       });
       
-      // Cache the newsletter for today
-      cache[today] = newsletter;
-      console.log("Newsletter built and cached for:", today);
+          // Cache the newsletter for current window
+    cache[cacheKey] = newsletter;
+    console.log("[NEWSLETTER] built & cached", cacheKey);
       
 
       
@@ -315,16 +323,10 @@ export async function GET(req: NextRequest) {
     } catch (error) {
       console.error("Newsletter build failed:", error);
       
-      // Return fallback data with error note
-      const fallbackNewsletter: DailyNewsletter = {
-        id: "daily-fallback-" + new Date().toISOString().split('T')[0],
-        ...FALLBACK_DATA.newsletter,
-        date: new Date().toISOString().split('T')[0]
-      };
-      
+      // Return building status instead of fallback data
       return NextResponse.json({
-        ...fallbackNewsletter,
-        note: `newsletter fallback: ${error instanceof Error ? error.message : String(error)}`
+        status: "building",
+        error: error instanceof Error ? error.message : String(error)
       });
     }
     

@@ -1,17 +1,17 @@
 import { useState, useEffect } from 'react';
 
 interface Headline {
+  id: string;
   title: string;
   url: string;
-  sources: string[];
+  source: string;
   category: string;
   timestamp: string;
-  sourceCount: number;
 }
 
 interface HeadlinesColumn {
   category: string;
-  headlines: Headline[];
+  cards: Headline[];
 }
 
 interface HeadlinesData {
@@ -19,12 +19,8 @@ interface HeadlinesData {
   columns: HeadlinesColumn[];
 }
 
-interface HeadlinesResponse {
-  success: boolean;
-  data: HeadlinesData;
-  timestamp: string;
-  note?: string;
-}
+// The API now returns data directly, not wrapped in a response object
+interface HeadlinesResponse extends HeadlinesData {}
 
 export function useHeadlines() {
   const [headlines, setHeadlines] = useState<HeadlinesData | null>(null);
@@ -46,8 +42,8 @@ export function useHeadlines() {
         
         const result: HeadlinesResponse = await response.json();
         
-        if (result && result.data && result.data.columns) {
-          setHeadlines(result.data);
+        if (result && result.columns) {
+          setHeadlines(result);
           console.log("Headlines data loaded successfully");
         } else {
           throw new Error('Invalid headlines data structure');

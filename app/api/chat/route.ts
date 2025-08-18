@@ -6,7 +6,7 @@ import OpenAI from "openai";
 const LLM_TIMEOUT_MS = 20_000; // 10 seconds per LLM call
 
 // Local cache for performance (populated when newsletter is fetched)
-let newsletterCache: Record<string, any> = {};
+const newsletterCache: Record<string, any> = {};
 
 interface Headline {
   id: string;
@@ -100,9 +100,13 @@ export async function POST(req: NextRequest) {
       );
     }
     
-    // Load today's newsletter from the in-memory cache
-    const today = new Date().toISOString().slice(0,10);
-    let newsletter = newsletterCache[today];
+    // Load today's newsletter from the in-memory cache (using AM/PM window)
+    const now = new Date();
+    const yyyyMMdd = (d: Date) => d.toISOString().slice(0,10);
+    const window = now.getHours() < 12 ? "AM" : "PM";
+    const cacheKey = `${yyyyMMdd(now)}-${window}`;
+    
+    let newsletter = newsletterCache[cacheKey];
     
     // If newsletter is undefined, try to fetch it from the newsletter API
     if (!newsletter) {
@@ -110,9 +114,23 @@ export async function POST(req: NextRequest) {
         console.log("[CHAT] No cached newsletter, fetching from newsletter API...");
         const newsletterResponse = await fetch(`${req.headers.get('origin') || 'http://localhost:3000'}/api/newsletter`);
         if (newsletterResponse.ok) {
-          newsletter = await newsletterResponse.json();
-          // Cache it for future use
-          newsletterCache[today] = newsletter;
+          const result = await newsletterResponse.json();
+          
+          // Check if newsletter is still building
+          if (result.status === "building") {
+            console.log("[CHAT] Newsletter is still building, returning building response");
+            return NextResponse.json({
+              success: true,
+              data: {
+                answer: "数据生成中，请稍候。",
+                nextQuestions: []
+              }
+            });
+          }
+          
+          // Cache the newsletter for future use
+          newsletterCache[cacheKey] = result;
+          newsletter = result;
           console.log("[CHAT] Successfully fetched and cached newsletter data");
         } else {
           console.log("[CHAT] Newsletter API returned error:", newsletterResponse.status);
@@ -134,11 +152,34 @@ export async function POST(req: NextRequest) {
       });
     }
     
-    // Find the current trend
-    const trend = newsletter.trends.find((t: any) => t.id === topicId);
+    // Find the current trend or headline
+    let trend = newsletter.trends.find((t: any) => t.id === topicId);
+    let headline = null;
     
-    // If trend not found, return same loading response
+    // If no trend found, try to find a headline from headlines API
     if (!trend) {
+      try {
+        console.log(`[CHAT] Topic not found in trends, checking headlines API for: ${topicId}`);
+        const headlinesResponse = await fetch(`${req.headers.get('origin') || 'http://localhost:3000'}/api/headlines`);
+        if (headlinesResponse.ok) {
+          const headlinesData = await headlinesResponse.json();
+          // Search through all columns for the headline
+          for (const column of headlinesData.columns) {
+            const found = column.cards.find((card: any) => card.id === topicId);
+            if (found) {
+              headline = found;
+              console.log(`[CHAT] Found headline: ${headline.title}`);
+              break;
+            }
+          }
+        }
+      } catch (headlinesError) {
+        console.log(`[CHAT] Failed to fetch headlines:`, headlinesError);
+      }
+    }
+    
+    // If neither trend nor headline found, return loading response
+    if (!trend && !headline) {
       console.log(`[CHAT] Topic not found: ${topicId}, returning loading response`);
       return NextResponse.json({
         success: true,
@@ -149,14 +190,20 @@ export async function POST(req: NextRequest) {
       });
     }
     
-    console.log(`[CHAT] Using real trend data: ${trend.title}`);
+    if (trend) {
+      console.log(`[CHAT] Using real trend data: ${trend.title}`);
+    } else if (headline) {
+      console.log(`[CHAT] Using headline data: ${headline.title}`);
+    }
     
     // Handle initialization request (empty question)
     if (init && (!question || question.trim() === "")) {
       console.log(`[CHAT] Initialization request for topic: ${topicId}`);
       
-      // Build Chinese prompt using real trend data (no fallback text)
-      const initPrompt = `你是一位友好且睿智的新闻对话伙伴，具备全球视野和跨领域知识，善于用开放、启发式的方式与用户探讨时事。你帮助用户理解新闻背后的深层逻辑，并激发他们主动思考。
+      // Build Chinese prompt using real trend or headline data
+      let initPrompt: string;
+      if (trend) {
+        initPrompt = `你是一位友好且睿智的新闻对话伙伴，具备全球视野和跨领域知识，善于用用轻松自然的语气和用户交流,用开放、启发式的方式与用户探讨时事。你帮助用户理解新闻背后的深层逻辑，激发他们主动思考。
 以下是今日主题摘要：
 标题: ${trend.title}
 摘要: ${trend.summary}
@@ -174,6 +221,34 @@ ${trend.headlines.map((h: any) => `• ${h.title}（${h.source}）`).join('\n')}
   "answer": "基于当前趋势，我建议从以下几个角度深入探讨：",
   "nextQuestions": ["问题1", "问题2"]
 }`;
+      } else if (headline) {
+        initPrompt = `你是一位友好且睿智的新闻对话伙伴，具备全球视野和跨领域知识，善于用开放、启发式的方式与用户探讨时事。你帮助用户理解新闻背后的深层逻辑，并激发他们主动思考。
+以下是今日新闻摘要：
+标题: ${headline.title}
+来源: ${headline.source}
+时间: ${new Date(headline.timestamp).toLocaleString()}
+
+请基于上述内容提出 2 个开放式、引人深思的问题，分别聚焦：
+1. 背景与成因分析
+2. 当前影响评估
+
+要求：每个问题控制在10-25个字符以内，简洁明了。
+
+严格返回 JSON:
+{
+  "answer": "基于这条新闻，我建议从以下几个角度深入探讨：",
+  "nextQuestions": ["问题1", "问题2"]
+}`;
+      } else {
+        // Fallback prompt if neither trend nor headline is found
+        initPrompt = `你是一位友好且睿智的新闻对话伙伴。请提出 2 个开放式问题，分别聚焦背景分析和影响评估。每个问题控制在10-25个字符以内。
+
+严格返回 JSON:
+{
+  "answer": "基于当前话题，我建议从以下几个角度深入探讨：",
+  "nextQuestions": ["问题1", "问题2"]
+}`;
+      }
 
       console.log(`[CHAT] Sending init prompt to DeepSeek for topic: ${topicId}`);
       
@@ -221,8 +296,16 @@ ${trend.headlines.map((h: any) => `• ${h.title}（${h.source}）`).join('\n')}
       );
     }
     
-    // Build Chinese prompt using real trend data (no fallback text)
-    const prompt = `你是一位友好且睿智的新闻对话伙伴，具备全球视野和跨领域知识。以下是今日主题摘要：
+    // Build Chinese prompt using real trend or headline data
+    let prompt: string;
+    
+    // Check if this is a structured content generation request
+    if (body.question.includes('JSON格式') || body.question.includes('questions') || body.question.includes('summary')) {
+      console.log('[CHAT] Detected structured content generation request');
+      prompt = body.question; // Use the exact prompt from frontend
+    } else if (trend) {
+      prompt = `你是一位友好且睿智的新闻对话伙伴，具备全球视野和跨领域知识。喜欢用轻松自然的语气和用户交流，善于用真实案例、比喻和提问激发用户思考。你的目标是让对话像朋友间的讨论一样有温度、有启发性。
+以下是今日主题摘要：
 标题: ${trend.title}
 摘要: ${trend.summary}
 相关新闻:
@@ -231,13 +314,45 @@ ${trend.headlines.map((h: any) => `• ${h.title}（${h.source}）`).join('\n')}
 用户问题:
 "${body.question}"
 
-请用中文详细回答用户问题（约150字）。请用 Markdown 格式输出答案，适当加粗关键词、分段、使用列表、引用等，让内容更易读。如需强调风险、建议、结论，可用**加粗**或>引用。
+请用中文详细回答用户问题（约150字）。请用 Markdown 格式输出答案，适当加粗关键词、分段、使用列表、引用、表情符号（如😊、💡、📈）等，让内容更愉快且易读。如需强调风险、建议、结论，可用**加粗**或>引用。
 
 严格返回 JSON:
 {
   "answer": "...",
   "nextQuestions": ["问题1", "问题2"]
 }`;
+    } else if (headline) {
+      prompt = `你是一位友好且睿智的新闻对话伙伴，具备全球视野和跨领域知识，喜欢用轻松自然的语气和用户交流，善于用真实案例、比喻和提问激发用户思考。你的目标是让对话像朋友间的讨论一样有温度、有启发性。
+。以下是今日新闻摘要：
+标题: ${headline.title}
+来源: ${headline.source}
+时间: ${new Date(headline.timestamp).toLocaleString()}
+
+用户问题:
+"${body.question}"
+
+请用中文详细回答用户问题（约150字）。请用 Markdown 格式输出答案，适当加粗关键词、分段、使用列表、引用、表情符号（如😊、💡、📈）等，让内容更易读。如需强调风险、建议、结论，可用**加粗**或>引用。
+
+严格返回 JSON:
+{
+  "answer": "...",
+  "nextQuestions": ["问题1", "问题2"]
+}`;
+    } else {
+      // Fallback prompt if neither trend nor headline is found
+      prompt = `你是一位友好且睿智的新闻对话伙伴。请用中文详细回答用户问题（约150字）。
+
+用户问题:
+"${body.question}"
+
+请用 Markdown 格式输出答案，适当加粗关键词、分段、使用列表、引用等，让内容更易读。
+
+严格返回 JSON:
+{
+  "answer": "...",
+  "nextQuestions": ["问题1", "问题2"]
+}`;
+    }
 
     console.log(`[CHAT] Sending prompt to DeepSeek for topic: ${topicId}`);
     
@@ -261,15 +376,33 @@ ${trend.headlines.map((h: any) => `• ${h.title}（${h.source}）`).join('\n')}
       throw new Error("LLM timeout after 10s");
     }
     
+    // Log the raw response for debugging
+    console.log(`[CHAT] Raw AI response (${raw.length} chars):`, raw.substring(0, 200));
+    
     // Parse the response
     let parsed;
     try { 
       parsed = JSON.parse(raw); 
+      console.log("[CHAT] Successfully parsed AI response:", parsed);
     } catch(e) {
-      console.warn("[CHAT] JSON parse fail", raw);
+      console.warn("[CHAT] JSON parse fail for response:", raw);
+      console.warn("[CHAT] Parse error:", e);
       parsed = {
-        answer: "抱歉，AI服务暂时卡住了，请再试一次吧！"
+        answer: "抱歉，AI服务暂时卡住了，请再试一次吧！",
+        nextQuestions: ["请重新尝试", "换个问题问我"]
       };
+    }
+    
+    // For structured content requests, return the parsed content directly
+    if (body.question.includes('JSON格式') || body.question.includes('questions') || body.question.includes('summary')) {
+      console.log('[CHAT] Returning structured content response');
+      return NextResponse.json({ 
+        success: true, 
+        data: {
+          answer: raw, // Return the raw AI response for frontend to parse
+          nextQuestions: []
+        }
+      });
     }
     
     // Generate follow-up questions separately for better performance
@@ -307,7 +440,7 @@ AI回答: "${parsed.answer}"
     } catch (followUpError) {
       console.warn("[CHAT] Failed to generate follow-up questions:", followUpError);
       // Use default questions if generation fails
-      followUpQuestions = ["请继续提问", "还有其他问题吗"];
+      followUpQuestions = ["所以呢？", "还有其他角度和观点吗？"];
     }
     
     // Log result and send
@@ -333,10 +466,10 @@ AI回答: "${parsed.answer}"
       const fallbackResponse = {
         success: true,
         data: {
-          answer: "抱歉，AI 服务暂时不可用，请稍后再试。",
+          answer: "抱歉😞，AI 服务暂时不可用，请稍后再试。",
           nextQuestions: []
         }
-      };
+      }
       return NextResponse.json(fallbackResponse);
     }
     

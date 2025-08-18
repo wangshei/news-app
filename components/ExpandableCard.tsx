@@ -41,9 +41,10 @@ interface ExpandableCardProps {
   title: string
   cardContent?: React.ReactNode
   newsletter?: DailyNewsletter | null
+  cacheKey?: string | null
 }
 
-export default function ExpandableCard({ title, cardContent, newsletter }: ExpandableCardProps) {
+export default function ExpandableCard({ title, cardContent, newsletter, cacheKey }: ExpandableCardProps) {
   const router = useRouter()
   const [todaysTheme, setTodaysTheme] = useState<TrendResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -100,10 +101,21 @@ export default function ExpandableCard({ title, cardContent, newsletter }: Expan
       >
         <CardContent className="p-6">
           <div className="text-left space-y-4">
-            {/* Large Title */}
-            <h1 className="text-3xl font-bold text-[var(--text)] leading-tight">
-              {todaysTheme.title}
-            </h1>
+            {/* Large Title with AM/PM Badge */}
+            <div className="flex items-center gap-3">
+              <h1 className="text-3xl font-bold text-[var(--text)] leading-tight">
+                {todaysTheme.title}
+              </h1>
+              {cacheKey && (
+                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                  cacheKey.endsWith("AM") 
+                    ? "bg-blue-100 text-blue-800" 
+                    : "bg-orange-100 text-orange-800"
+                }`}>
+                  {cacheKey.endsWith("AM") ? "早报" : "晚报"}
+                </span>
+              )}
+            </div>
             
             {/* Tagline */}
             <p className="text-md text-[var(--muted-text)]">

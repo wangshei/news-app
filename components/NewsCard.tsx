@@ -2,7 +2,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { useRouter } from "next/navigation"
 
 interface NewsItem {
-  id: number
+  id: number | string
   time: string
   title: string
   hasImage: boolean
@@ -29,9 +29,9 @@ export default function NewsCard({ item, category }: NewsCardProps) {
   }
 
   const handleCardClick = () => {
-    // Navigate to the unified chat system with the appropriate category ID
-    const categoryId = getCategoryId(category)
-    router.push(`/chat?id=${categoryId}`)
+    // Navigate to the unified chat system with the headline ID
+    console.log(`▶️ Kanban → ChatWindow id=${item.id}`)
+    router.push(`/chat?id=${item.id}`)
   }
 
   return (

@@ -1,19 +1,14 @@
-// This endpoint fetches and ranks news headlines for Quick Browse using HTTP+Cheerio by default, with BrowserAgent fallback for JS-heavy sites.
+// This endpoint fetches headlines using ONLY the first verified feed per category
 import { NextRequest, NextResponse } from "next/server";
-import { Eko } from "@eko-ai/eko";
-import { BrowserAgent } from "@eko-ai/eko-nodejs";
 import { NEWS_SOURCES } from "@/config/newsSources";
 import { FALLBACK_DATA } from "@/config/fallbackData";
 import * as cheerio from 'cheerio';
-
-// Timeout constants
-const PER_SITE_TIMEOUT_MS = 10_000;   // 10 seconds per site
-const ROUTE_TIMEOUT_MS = 12_000;      // 12 seconds total route timeout
 
 // In-memory cache for headlines with 1-hour expiration
 const cache: { [date: string]: { data: any; timestamp: number; expiresAt: number } } = {};
 
 interface Headline {
+  id: string;
   title: string;
   url: string;
   source: string;
@@ -21,31 +16,20 @@ interface Headline {
   timestamp: string;
 }
 
-interface NormalizedHeadline {
-  title: string;
-  url: string;
-  sources: string[];
+interface HeadlinesColumn {
   category: string;
-  timestamp: string;
-  sourceCount: number;
+  cards: Headline[];
+}
+
+interface HeadlinesData {
+  date: string;
+  columns: HeadlinesColumn[];
 }
 
 export async function GET(req: NextRequest) {
   try {
-    console.log(`[HEADLINES] Request received on port ${process.env.PORT || 3000}`);
-    console.log("Headlines API route called");
+    console.log("[HEADLINES] Request received");
     
-    // Check if API key is configured
-    if (!process.env.DEEPSEEK_API_KEY) {
-      console.error("DEEPSEEK_API_KEY not configured");
-      return NextResponse.json(
-        { error: "DEEPSEEK_API_KEY environment variable not configured" },
-        { status: 500 }
-      );
-    }
-    
-    console.log("API key found, length:", process.env.DEEPSEEK_API_KEY.length);
-
     // Check cache first
     const today = new Date().toISOString().slice(0,10);
     
@@ -64,189 +48,190 @@ export async function GET(req: NextRequest) {
     
     console.log("Building fresh headlines for:", today);
     
-    // Timeout wrapper for individual source scraping
-    async function scrapeWithTimeout(promise: Promise<any>, url: string) {
-      return Promise.race([
-        promise,
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("TIMEOUT " + url)), PER_SITE_TIMEOUT_MS)
-        )
-      ]);
-    }
-    
     // Main headlines building function
     async function buildHeadlines() {
-      const t0 = Date.now();
-      const allHeadlines: Headline[] = [];
+      const columns: HeadlinesColumn[] = [];
       
-      // Process each category and its sources
+      // Process each category using ONLY the first source
       for (const [category, sources] of Object.entries(NEWS_SOURCES)) {
-        console.log(`Processing category: ${category}`);
+        if (sources.length === 0) continue;
         
-        for (const source of sources) {
-          try {
-            console.log(`Scraping from ${source.name}: ${source.url}`);
-            
-            let headlines: Headline[] = [];
-            
-            // Use Cheerio by default (faster for static HTML)
-            if (source.preferCheerio !== false) {
-              try {
-                console.log(`[Cheerio] Attempting to scrape ${source.name}`);
-                headlines = await scrapeWithTimeout(scrapeWithCheerio(source, category), source.url);
-                
-                if (headlines.length > 0) {
-                  console.log(`✅ [Cheerio] Successfully scraped ${headlines.length} headlines from ${source.name}`);
-                } else {
-                  console.warn(`⚠️ [Cheerio] No headlines found for ${source.name}, falling back to BrowserAgent`);
-                  throw new Error("No headlines found with Cheerio");
-                }
-              } catch (cheerioError) {
-                console.warn(`⚠️ [Cheerio] Failed for ${source.name}:`, cheerioError instanceof Error ? cheerioError.message : String(cheerioError));
-                throw cheerioError; // Trigger fallback to BrowserAgent
-              }
-            }
-            
-            // Use BrowserAgent as fallback or when preferCheerio is false
-            if (headlines.length === 0) {
-              try {
-                console.log(`[BrowserAgent] Attempting to scrape ${source.name}`);
-                headlines = await scrapeWithTimeout(scrapeWithBrowserAgent(source, category), source.url);
-                
-                if (headlines.length > 0) {
-                  console.log(`✅ [BrowserAgent] Successfully scraped ${headlines.length} headlines from ${source.name}`);
-                } else {
-                  console.warn(`⚠️ [BrowserAgent] No headlines found for ${source.name}`);
-                }
-              } catch (browserError) {
-                if (browserError instanceof Error && browserError.message.startsWith("TIMEOUT")) {
-                  console.warn(`[HEADLINES] Timeout or error:`, browserError.message);
-                } else {
-                  console.error(`❌ [BrowserAgent] Failed for ${source.name}:`, browserError instanceof Error ? browserError.message : String(browserError));
-                }
-                // Continue with other sources
-              }
-            }
-            
-            allHeadlines.push(...headlines);
-            
-          } catch (sourceError) {
-            if (sourceError instanceof Error && sourceError.message.startsWith("TIMEOUT")) {
-              console.warn(`[HEADLINES] Timeout or error:`, sourceError.message);
-            } else {
-              console.error(`Failed to scrape ${source.name}:`, sourceError);
-            }
-            // Continue with other sources
+        const source = sources[0]; // Use ONLY first source
+        console.log(`[HEADLINES] Processing ${category} from ${source.name}`);
+        
+        try {
+          let headlines: Headline[] = [];
+          
+          if (source.rss) {
+            // Fetch RSS feed
+            headlines = await fetchRSSHeadlines(source, category);
+            console.log(`[HEADLINES] OK ${category} ${headlines.length} items`);
+          } else {
+            // Fetch HTML and parse with Cheerio
+            headlines = await fetchHTMLHeadlines(source, category);
+            console.log(`[HEADLINES] OK ${category} ${headlines.length} items`);
           }
+          
+          // Process headlines for this category
+          const processedHeadlines = processHeadlines(headlines, category);
+          
+          columns.push({
+            category: getCategoryDisplayName(category),
+            cards: processedHeadlines.slice(0, 5) // Top 5 per category
+          });
+          
+        } catch (error) {
+          console.log(`[HEADLINES] FAIL ${category} ${source.name} fetch:`, error instanceof Error ? error.message : String(error));
+          
+          // Return single fallback card for this category
+          columns.push({
+            category: getCategoryDisplayName(category),
+            cards: [{
+              id: `${category}-fallback`,
+              title: `Fallback headline for ${category}`,
+              url: `https://example.com/${category}-fallback`,
+              source: source.name,
+              category: category,
+              timestamp: new Date().toISOString()
+            }]
+          });
         }
       }
       
-      // Process and rank headlines
-      const processedHeadlines = processAndRankHeadlines(allHeadlines);
-      
-      // Build result in expected format: { date, columns[] }
-      const result = {
-        success: true,
-        data: {
-          date: today,
-          columns: Object.keys(NEWS_SOURCES).map(category => ({
-            category,
-            headlines: processedHeadlines.filter(h => h.category === category)
-          }))
-        },
-        timestamp: new Date().toISOString()
-      };
-
-      console.log(`Total headlines collected: ${allHeadlines.length}`);
-      console.log(`Processed headlines: ${processedHeadlines.length}`);
-      console.log(`Final result structure:`, result);
-      
-      // Cache the result for 1 hour
-      cache[today] = {
-        data: result,
-        timestamp: Date.now(),
-        expiresAt: Date.now() + (60 * 60 * 1000) // 1 hour
-      };
-      console.log("Headlines cached for:", today);
-      
-      // Log successful completion with timing
-      console.log(`[HEADLINES] OK – ${result.data.columns.length} categories, ${(Date.now()-t0)}ms`);
-      
-      return result;
+      return columns;
     }
     
-        // Overall route timeout wrapper with immediate fallback for testing
-    try {
-      // For now, return fallback data immediately to test the structure
-      console.log(`[HEADLINES] Returning fallback data for testing`);
-      
-      const fallbackData = {
-        success: true,
-        data: {
-          date: today,
-          columns: Object.keys(NEWS_SOURCES).map(category => ({
-            category,
-            headlines: FALLBACK_DATA.headlines.filter(h => h.category === category)
-          }))
-        },
-        timestamp: new Date().toISOString(),
-        note: "Fallback data for testing - scraping disabled temporarily"
-      };
-      
-      return NextResponse.json(fallbackData);
-      
-      // TODO: Re-enable scraping with proper timeout handling
-      // const result = await Promise.race([buildHeadlines(), timeoutError()]);
-      // return NextResponse.json(result);
-    } catch (error) {
-      console.warn(`[HEADLINES] Error:`, error instanceof Error ? error.message : String(error));
-      
-      // Return fallback data with error note
-      const fallbackData = {
-        success: true,
-        data: {
-          date: today,
-          columns: Object.keys(NEWS_SOURCES).map(category => ({
-            category,
-            headlines: FALLBACK_DATA.headlines.filter(h => h.category === category)
-          }))
-        },
-        timestamp: new Date().toISOString(),
-        note: `Error occurred: ${error instanceof Error ? error.message : String(error)}`
-      };
-      
-      return NextResponse.json(fallbackData);
-    }
+    // Build headlines
+    const columns = await buildHeadlines();
+    
+    // Build response data
+    const responseData: HeadlinesData = {
+      date: today,
+      columns: columns
+    };
+    
+    // Cache the result
+    cache[today] = {
+      data: responseData,
+      timestamp: Date.now(),
+      expiresAt: Date.now() + (60 * 60 * 1000) // 1 hour
+    };
+    
+    console.log(`[HEADLINES] OK – ${columns.length} categories built`);
+    
+    return NextResponse.json(responseData);
     
   } catch (error) {
-    console.error("Error fetching headlines:", error);
+    console.error("[HEADLINES] Route error:", error);
     
-    // Return fallback data with error note
-    const fallbackData = {
-      success: true,
-      data: {
-        date: new Date().toISOString().slice(0,10),
-        columns: Object.keys(NEWS_SOURCES).map(category => ({
-          category,
-          headlines: FALLBACK_DATA.headlines.filter(h => h.category === category)
-        }))
-      },
-      timestamp: new Date().toISOString(),
-      note: `Fallback data due to error: ${error instanceof Error ? error.message : String(error)}`
+    // Return fallback data
+    const fallbackData: HeadlinesData = {
+      date: new Date().toISOString().slice(0, 10),
+      columns: [
+        {
+          category: "社会",
+          cards: [{
+            id: "society-fallback",
+            title: FALLBACK_DATA.headlines[0].title,
+            url: FALLBACK_DATA.headlines[0].url,
+            source: "Fallback Data",
+            category: "society",
+            timestamp: new Date().toISOString()
+          }]
+        },
+        {
+          category: "科技", 
+          cards: [{
+            id: "tech-fallback",
+            title: FALLBACK_DATA.headlines[1].title,
+            url: FALLBACK_DATA.headlines[1].url,
+            source: "Fallback Data",
+            category: "tech",
+            timestamp: new Date().toISOString()
+          }]
+        },
+        {
+          category: "经济",
+          cards: [{
+            id: "economy-fallback",
+            title: FALLBACK_DATA.headlines[2].title,
+            url: FALLBACK_DATA.headlines[2].url,
+            source: "Fallback Data",
+            category: "economy",
+            timestamp: new Date().toISOString()
+          }]
+        }
+      ]
     };
     
     return NextResponse.json(fallbackData);
   }
 }
 
-// Scrape headlines using HTTP + Cheerio
-async function scrapeWithCheerio(source: any, category: string): Promise<Headline[]> {
+// Fetch headlines from RSS feed
+async function fetchRSSHeadlines(source: any, category: string): Promise<Headline[]> {
   try {
     const response = await fetch(source.url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
       }
-      // Note: Timeout is handled by scrapeWithTimeout wrapper
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
+    const xmlText = await response.text();
+    const $ = cheerio.load(xmlText, { xmlMode: true });
+    
+    const headlines: Headline[] = [];
+    const items = $('item').slice(0, 10); // Take latest 10 items
+    
+    items.each((index, element) => {
+      const $item = $(element);
+      const title = $item.find('title').text().trim();
+      const link = $item.find('link').text().trim();
+      const pubDate = $item.find('pubDate').text().trim();
+      
+      if (title && link) {
+        // Handle missing or unparseable pubDate - treat as "now"
+        let timestamp = new Date().toISOString();
+        if (pubDate) {
+          try {
+            const parsedDate = new Date(pubDate);
+            if (!isNaN(parsedDate.getTime())) {
+              timestamp = parsedDate.toISOString();
+            }
+          } catch (dateError) {
+            console.warn(`Could not parse pubDate for ${source.name}: ${pubDate}`);
+          }
+        }
+        
+        headlines.push({
+          id: `${category}-${source.name}-${index}`,
+          title,
+          source: source.name,
+          url: link,
+          category,
+          timestamp
+        });
+      }
+    });
+    
+    return headlines;
+    
+  } catch (error) {
+    throw new Error(`RSS fetching failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+// Fetch headlines from HTML using Cheerio
+async function fetchHTMLHeadlines(source: any, category: string): Promise<Headline[]> {
+  try {
+    const response = await fetch(source.url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      }
     });
     
     if (!response.ok) {
@@ -257,30 +242,22 @@ async function scrapeWithCheerio(source: any, category: string): Promise<Headlin
     const $ = cheerio.load(html);
     
     const headlines: Headline[] = [];
-    const elements = $(source.selector);
+    const links = $(source.selector || 'a').slice(0, 10); // Take latest 10 items
     
-    // Extract up to 3 headlines
-    elements.slice(0, 3).each((index, element) => {
-      const $el = $(element);
-      const title = $el.text().trim();
-      let url = $el.attr('href') || '';
-      
-      // Handle relative URLs
-      if (url && !url.startsWith('http')) {
-        try {
-          const baseUrl = new URL(source.url);
-          url = new URL(url, baseUrl).href;
-        } catch (urlError) {
-          console.warn(`Invalid URL for ${source.name}:`, url);
-          url = '';
-        }
-      }
+    links.each((index, element) => {
+      const $link = $(element);
+      const title = $link.text().trim();
+      const url = $link.attr('href');
       
       if (title && url) {
+        // Convert relative URLs to absolute
+        const absoluteUrl = url.startsWith('http') ? url : new URL(url, source.url).href;
+        
         headlines.push({
+          id: `${category}-${source.name}-${index}`,
           title,
-          url,
           source: source.name,
+          url: absoluteUrl,
           category,
           timestamp: new Date().toISOString()
         });
@@ -290,176 +267,59 @@ async function scrapeWithCheerio(source: any, category: string): Promise<Headlin
     return headlines;
     
   } catch (error) {
-    throw new Error(`Cheerio scraping failed: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`HTML fetching failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
-// Scrape headlines using Eko BrowserAgent (fallback)
-async function scrapeWithBrowserAgent(source: any, category: string): Promise<Headline[]> {
-  try {
-    // Create Eko instance with BrowserAgent for web scraping
-    console.log("Creating Eko instance with BrowserAgent...");
-    
-    // Create BrowserAgent with headless mode enabled
-    // Note: Using setHeadless(true) as documented in Eko BrowserAgent API
-    const browserAgent = new BrowserAgent();
-    browserAgent.setHeadless(true);
-    
-    const eko = new Eko({
-      agents: [browserAgent],
-      llms: {
-        default: {
-          provider: "openai-compatible",
-          model: "deepseek-chat",
-          apiKey: process.env.DEEPSEEK_API_KEY!,
-          config: {
-            baseURL: "https://api.deepseek.com/v1",
-            timeout: 30000,
-            maxRetries: 2,
-            maxTokens: 8000,
-            temperature: 0.7,
-            topP: 0.9
-          }
-        },
-      },
-    });
-    
-    console.log("Eko instance created successfully with headless BrowserAgent");
-    
-    // Create scraping prompt
-    const scrapingPrompt = `请按照以下步骤操作：
-
-1. 导航到网页：${source.url}
-2. 等待页面完全加载
-3. 使用CSS选择器 "${source.selector}" 提取页面上的前3个主要新闻标题和对应的链接
-4. 返回JSON格式的结果
-
-请用严格的JSON格式返回：
-{
-  "headlines": [
-    {
-      "title": "新闻标题",
-      "url": "新闻链接"
+// Process headlines: filter by recency, deduplicate, sort by timestamp
+function processHeadlines(headlines: Headline[], category: string): Headline[] {
+  const now = new Date();
+  const twentyFourHoursAgo = new Date(now.getTime() - (24 * 60 * 60 * 1000));
+  
+  // Filter by recency (keep items published ≤24 hours ago)
+  const recentHeadlines = headlines.filter(h => {
+    try {
+      const pubDate = new Date(h.timestamp);
+      return pubDate >= twentyFourHoursAgo;
+    } catch {
+      return true; // Keep items with unparseable dates
     }
-  ]
+  });
+  
+  // Deduplicate by normalizing titles
+  const seen = new Set<string>();
+  const uniqueHeadlines = recentHeadlines.filter(h => {
+    const normalized = h.title.toLowerCase()
+      .replace(/[^\w\s]/g, '') // Remove punctuation
+      .slice(0, 40); // Take first 40 chars
+    
+    if (seen.has(normalized)) {
+      return false;
+    }
+    seen.add(normalized);
+    return true;
+  });
+  
+  // Sort by timestamp descending (most recent first)
+  uniqueHeadlines.sort((a, b) => {
+    try {
+      const dateA = new Date(a.timestamp);
+      const dateB = new Date(b.timestamp);
+      return dateB.getTime() - dateA.getTime();
+    } catch {
+      return 0; // Keep original order if dates can't be parsed
+    }
+  });
+  
+  return uniqueHeadlines;
 }
 
-注意：
-- 只返回JSON，不要其他解释
-- 确保JSON格式正确
-- 最多返回3条新闻
-- 使用指定的CSS选择器来定位新闻元素`;
-
-    // Note: Timeout is handled by scrapeWithTimeout wrapper
-    const scrapingResult = await eko.run(scrapingPrompt);
-    console.log(`Source result for ${source.name}:`, scrapingResult);
-    
-    // Parse scraping result and extract headlines
-    let headlines: Headline[] = [];
-    
-    if (scrapingResult && typeof scrapingResult === 'object') {
-      let content = '';
-      
-      // Try different possible content fields from Eko result
-      if ('content' in scrapingResult && typeof scrapingResult.content === 'string') {
-        content = scrapingResult.content;
-      } else if ('result' in scrapingResult && typeof scrapingResult.result === 'string') {
-        content = scrapingResult.result;
-      } else {
-        content = JSON.stringify(scrapingResult);
-      }
-      
-      // Clean content
-      if (content.startsWith('```json')) {
-        content = content.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-      }
-      if (content.startsWith('```')) {
-        content = content.replace(/^```\s*/, '').replace(/\s*```$/, '');
-      }
-      
-      try {
-        const parsed = JSON.parse(content);
-        if (parsed.headlines && Array.isArray(parsed.headlines)) {
-          headlines = parsed.headlines.slice(0, 3).map((h: any) => ({
-            title: h.title,
-            url: h.url,
-            source: source.name,
-            category,
-            timestamp: new Date().toISOString()
-          }));
-        }
-      } catch (parseError) {
-        console.error(`Failed to parse BrowserAgent result for ${source.name}:`, parseError);
-      }
-    }
-    
-    return headlines;
-    
-  } catch (error) {
-    throw new Error(`BrowserAgent scraping failed: ${error instanceof Error ? error.message : String(error)}`);
-  }
-}
-
-// Process and rank headlines
-function processAndRankHeadlines(headlines: Headline[]): NormalizedHeadline[] {
-  // Normalize titles for deduplication
-  const normalizeTitle = (title: string): string => {
-    return title.toLowerCase()
-      .replace(/[^\w\s\u4e00-\u9fff]/g, '') // Remove punctuation, keep Chinese characters
-      .replace(/\s+/g, ' ') // Normalize whitespace
-      .trim();
+// Get display name for category
+function getCategoryDisplayName(category: string): string {
+  const displayNames: { [key: string]: string } = {
+    'society': '社会',
+    'tech': '科技',
+    'economy': '经济'
   };
-  
-  // Group headlines by normalized title
-  const headlineGroups = new Map<string, Headline[]>();
-  
-  headlines.forEach(headline => {
-    const normalizedTitle = normalizeTitle(headline.title);
-    if (!headlineGroups.has(normalizedTitle)) {
-      headlineGroups.set(normalizedTitle, []);
-    }
-    headlineGroups.get(normalizedTitle)!.push(headline);
-  });
-  
-  // Convert groups to normalized headlines
-  const normalizedHeadlines: NormalizedHeadline[] = Array.from(headlineGroups.entries()).map(([normalizedTitle, group]) => {
-    // Use the first headline as the base
-    const base = group[0];
-    
-    // Collect all sources and find the most recent timestamp
-    const sources = [...new Set(group.map(h => h.source))];
-    const timestamps = group.map(h => new Date(h.timestamp).getTime());
-    const mostRecentTimestamp = new Date(Math.max(...timestamps)).toISOString();
-    
-    return {
-      title: base.title, // Use original title, not normalized
-      url: base.url,
-      sources,
-      category: base.category,
-      timestamp: mostRecentTimestamp,
-      sourceCount: sources.length
-    };
-  });
-  
-  // Rank by source count (relevancy) then by recency
-  normalizedHeadlines.sort((a, b) => {
-    if (a.sourceCount !== b.sourceCount) {
-      return b.sourceCount - a.sourceCount; // Higher source count first
-    }
-    return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(); // More recent first
-  });
-  
-  // Return top 5 per category
-  const categoryLimits = new Map<string, number>();
-  const result: NormalizedHeadline[] = [];
-  
-  normalizedHeadlines.forEach(headline => {
-    const currentCount = categoryLimits.get(headline.category) || 0;
-    if (currentCount < 5) {
-      result.push(headline);
-      categoryLimits.set(headline.category, currentCount + 1);
-    }
-  });
-  
-  return result;
+  return displayNames[category] || category;
 }
