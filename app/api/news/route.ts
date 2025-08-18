@@ -1,8 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { FALLBACK_DATA } from "@/config/fallbackData";
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   try {
     console.log("API route called");
     

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, Suspense } from "react"
+import { useState, useEffect, Suspense, useCallback } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 
@@ -85,24 +85,7 @@ function ChatPageContent() {
     }
   }, [searchParams, headlinesData, router])
 
-  // Generate initial questions and analyze source when headline is loaded
-  useEffect(() => {
-    console.log('useEffect triggered:', { headline: headline?.title, questionsGenerated })
-    if (headline) {
-      if (!questionsGenerated) {
-        console.log('Calling generateInitialQuestions')
-        generateInitialQuestions()
-      }
-      
-      // Always analyze source content for real-time description
-      console.log('Calling analyzeSourceContent')
-      analyzeSourceContent(headline)
-    } else {
-      console.log('Skipping functions - no headline available')
-    }
-  }, [headline]) // Remove questionsGenerated from dependencies
-
-  const generateInitialQuestions = async () => {
+  const generateInitialQuestions = useCallback(async () => {
     console.log('generateInitialQuestions called with:', { headline: headline?.title, questionsGenerated })
     if (!headline || questionsGenerated) {
       console.log('Skipping generation - headline:', !!headline, 'questionsGenerated:', questionsGenerated)
@@ -229,23 +212,37 @@ function ChatPageContent() {
           "未来会如何发展？"
         ])
         setHeadlineSummary("这是一条关于" + headline.category + "的新闻，涉及" + headline.source + "的报道")
-        // Description will be handled by analyzeSourceContent
         setQuestionsGenerated(true)
       }
     } catch (error) {
-      console.error('Error generating initial questions:', error)
-      // Fallback questions if API fails
+      console.error('Error calling chat API:', error)
+      // Fallback if API call fails
       setInitialQuestions([
         "这个新闻有什么影响？",
         "为什么会发生这样的事？",
         "未来会如何发展？"
       ])
       setHeadlineSummary("这是一条关于" + headline.category + "的新闻，涉及" + headline.source + "的报道")
-      // Description will be handled by analyzeSourceContent
       setQuestionsGenerated(true)
     }
-  }
+  }, [headline, questionsGenerated])
 
+  // Generate initial questions and analyze source when headline is loaded
+  useEffect(() => {
+    console.log('useEffect triggered:', { headline: headline?.title, questionsGenerated })
+    if (headline) {
+      if (!questionsGenerated) {
+        console.log('Calling generateInitialQuestions')
+        generateInitialQuestions()
+      }
+      
+      // Always analyze source content for real-time description
+      console.log('Calling analyzeSourceContent')
+      analyzeSourceContent(headline)
+    } else {
+      console.log('Skipping functions - no headline available')
+    }
+  }, [headline, questionsGenerated, generateInitialQuestions]) // Add generateInitialQuestions to dependencies
 
 
   const handleQuestionClick = async (question: string) => {

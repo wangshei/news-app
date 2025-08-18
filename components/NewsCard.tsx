@@ -14,7 +14,7 @@ interface NewsCardProps {
   category: string
 }
 
-export default function NewsCard({ item, category }: NewsCardProps) {
+export default function NewsCard({ item }: Omit<NewsCardProps, 'category'>) {
   const router = useRouter()
 
 

@@ -82,6 +82,13 @@ export async function GET(req: NextRequest) {
     const effectiveCategoryIds = validRequestedCats.length > 1
       ? validRequestedCats.slice(0, 3)
       : CATEGORIES.slice(0, 3).map(c => c.id);
+    const force = !!req.nextUrl.searchParams.get("force");
+    console.log('[NEWSLETTER][INIT]', {
+      catsParam,
+      validRequestedCats,
+      effectiveCategoryIds,
+      force
+    });
 
     // Check cache first with AM/PM window and active categories in key
     const now = new Date();
@@ -126,7 +133,7 @@ export async function GET(req: NextRequest) {
       // Process only active categories
       for (const categoryMeta of activeCategories) {
         const category = categoryMeta.id;
-        console.log(`[NEWSLETTER] Processing category: ${category}`);
+        console.log(`[NEWSLETTER][FETCH] Category start: ${category}`);
         
         const categoryHeadlines: Headline[] = [];
         const sources: NewsSource[] = NEWS_SOURCES[category as keyof typeof NEWS_SOURCES] || [];
@@ -148,7 +155,7 @@ export async function GET(req: NextRequest) {
               // Fetch RSS feed
               try {
                 headlines = await fetchWithTimeout(fetchRSSHeadlines(source, category), source.name);
-                console.log(`[NEWSLETTER] OK ${source.name} - ${headlines.length} headlines`);
+                console.log(`[NEWSLETTER][RECV][RSS] ${source.name} - raw ${headlines.length}`);
               } catch (rssError) {
                 console.warn(`[NEWSLETTER] FAIL ${source.name}:`, rssError instanceof Error ? rssError.message : String(rssError));
                 continue; // Try next source
@@ -157,7 +164,7 @@ export async function GET(req: NextRequest) {
               // Fetch HTML and parse with Cheerio
               try {
                 headlines = await fetchWithTimeout(fetchHTMLHeadlines(source, category), source.name);
-                console.log(`[NEWSLETTER] OK ${source.name} - ${headlines.length} headlines`);
+                console.log(`[NEWSLETTER][RECV][HTML] ${source.name} - raw ${headlines.length}`);
               } catch (htmlError) {
                 console.warn(`[NEWSLETTER] FAIL ${source.name}:`, htmlError instanceof Error ? htmlError.message : String(htmlError));
                 continue; // Try next source
@@ -170,11 +177,12 @@ export async function GET(req: NextRequest) {
               const headlineTime = new Date(h.timestamp);
               return headlineTime >= twelveHoursAgo;
             });
+            console.log(`[NEWSLETTER][RECV] ${source.name} -> recent ${recentHeadlines.length} (window ${RECENT_MS/3600000}h)`);
             
             if (recentHeadlines.length > 0) {
               categoryHeadlines.push(...recentHeadlines);
               hasHeadlines = true;
-              console.log(`[NEWSLETTER] Successfully got ${recentHeadlines.length} recent headlines from ${source.name}`);
+              console.log(`[NEWSLETTER][RECV] accepted ${recentHeadlines.length} from ${source.name} (category total ${categoryHeadlines.length})`);
               break; // Found headlines, no need to try other sources
             } else {
               console.log(`[NEWSLETTER] No recent headlines from ${source.name}, trying next source`);
@@ -194,6 +202,7 @@ export async function GET(req: NextRequest) {
         
         // Deduplicate and score headlines
         const processedHeadlines = processHeadlines(categoryHeadlines);
+        console.log(`[NEWSLETTER][AGG] ${category}: raw=${categoryHeadlines.length} dedup=${processedHeadlines.length}`);
         
         // If deduplication returns empty, keep up to 5 original headlines
         const finalHeadlines = processedHeadlines.length > 0 ? processedHeadlines : categoryHeadlines.slice(0, 5);
@@ -291,8 +300,7 @@ export async function GET(req: NextRequest) {
           category: categoryMeta.label,
           headlines: finalHeadlines
         });
-        
-        console.log(`✅ Successfully processed category ${category} with ${finalHeadlines.length} headlines`);
+        console.log(`[NEWSLETTER][CATEGORY DONE] ${category} -> trend ready with ${finalHeadlines.length} headlines`);
       }
       
       // Check if we have any trends at all
@@ -555,7 +563,7 @@ function processHeadlines(headlines: Headline[]): Headline[] {
   });
   
   // Convert groups to deduplicated headlines
-  const deduplicatedHeadlines: Headline[] = Array.from(headlineGroups.entries()).map(([normalizedTitle, group]) => {
+  const deduplicatedHeadlines: Headline[] = Array.from(headlineGroups.entries()).map(([, group]) => {
     // Use the first headline as the base
     const base = group[0];
     

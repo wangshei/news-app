@@ -100,7 +100,7 @@ export async function POST(req: NextRequest) {
       );
     }
     
-    let contextData: any = null;
+    let contextData: DailyNewsletter | Headline | null = null;
     let contextType: "trend" | "headline" = "trend";
     
     // Fetch context based on mode
@@ -250,7 +250,7 @@ export async function POST(req: NextRequest) {
     let trend = null;
     let headline = null;
     
-    if (contextType === "trend") {
+    if (contextType === "trend" && contextData && 'trends' in contextData) {
       trend = contextData.trends.find((t: Trend) => t.id === topicId);
       if (!trend) {
         console.log(`[CHAT] Topic not found in trends: ${topicId}`);
@@ -262,8 +262,8 @@ export async function POST(req: NextRequest) {
           }
         });
       }
-    } else if (contextType === "headline") {
-      headline = contextData;
+    } else if (contextType === "headline" && contextData && 'source' in contextData) {
+      headline = contextData as Headline;
     }
     
     // If neither trend nor headline found, return loading response

@@ -1,11 +1,12 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import Image from "next/image"
 
 export default function Sidebar() {
   return (
     <aside className="sidebar-container w-[200px] bg-[var(--surface-secondary)] border-r border-[var(--surface-alt)] flex flex-col">
       {/* Logo */}
               <div className="logo-section p-6 flex items-center gap-2"> 
-                <img src="/logo.svg" alt="logo" className="w-15 h-15" />
+                <Image src="/logo.svg" alt="logo" width={60} height={60} className="w-15 h-15" />
                 <span className="text-xl font-bold text-[var(--accent)] mt-2">小板凳</span>
         </div>
 

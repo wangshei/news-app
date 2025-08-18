@@ -41,7 +41,7 @@ export default function KanbanColumn({ category, categoryId, newsItems }: Kanban
             <div className="text-xs text-[var(--muted-text)] mb-2 font-medium">{time}</div>
             <div className="space-y-2">
               {items.map((item) => (
-                <NewsCard key={item.id} item={item} category={category} />
+                <NewsCard key={item.id} item={item} />
               ))}
             </div>
           </div>

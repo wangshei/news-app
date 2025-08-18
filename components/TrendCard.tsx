@@ -53,14 +53,14 @@ export default function TrendCard({ trend, expandedSource, onToggleSource }: Tre
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
-                  strong: ({node, ...props}) => <strong className="text-[var(--accent)] font-semibold" {...props} />,
-                  em: ({node, ...props}) => <em className="text-[var(--text-secondary)]" {...props} />,
-                  ul: ({node, ...props}) => <ul className="list-disc pl-6 my-2 space-y-1" {...props} />,
-                  ol: ({node, ...props}) => <ol className="list-decimal pl-6 my-2 space-y-1" {...props} />,
-                  li: ({node, ...props}) => <li className="mb-1" {...props} />,
-                  p: ({node, ...props}) => <p className="mb-2 leading-relaxed" {...props} />,
-                  blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-[var(--accent)] pl-4 italic text-[var(--text)] my-2" {...props} />,
-                  code: ({node, ...props}) => <code className="bg-[var(--accent)] px-1 rounded text-[var(--accent)]" {...props} />,
+                  strong: ({node: _node, ...props}) => <strong className="text-[var(--accent)] font-semibold" {...props} />,
+                  em: ({node: _node, ...props}) => <em className="text-[var(--text-secondary)]" {...props} />,
+                  ul: ({node: _node, ...props}) => <ul className="list-disc pl-6 my-2 space-y-1" {...props} />,
+                  ol: ({node: _node, ...props}) => <ol className="list-decimal pl-6 my-2 space-y-1" {...props} />,
+                  li: ({node: _node, ...props}) => <li className="mb-1" {...props} />,
+                  p: ({node: _node, ...props}) => <p className="mb-2 leading-relaxed" {...props} />,
+                  blockquote: ({node: _node, ...props}) => <blockquote className="border-l-4 border-[var(--accent)] pl-4 italic text-[var(--text)] my-2" {...props} />,
+                  code: ({node: _node, ...props}) => <code className="bg-[var(--accent)] px-1 rounded text-[var(--accent)]" {...props} />,
                 }}
               >
                 {String(trend.description)}

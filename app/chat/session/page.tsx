@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, Suspense } from "react"
+import { useState, useEffect, Suspense, useCallback } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft, ChevronDown, ChevronUp } from "lucide-react"
@@ -59,25 +59,8 @@ function ChatSessionPageContent() {
     }
   }, [newsletter]);
 
-  // Start with empty history for each topic - no more seedHistory
-  useEffect(() => {
-    if (newsletter?.trends && newsletter.trends.length > 0 && currentIdx < newsletter.trends.length) {
-      setHistory([]) // Start with empty history for each topic
-      setSuggest([]) // Reset suggestions
-      setIsInitializing(false) // Reset initialization state
-      
-      // Initialize with AI-generated suggestions for the current trend
-      initializeTrendSuggestions()
-    }
-  }, [newsletter, currentIdx])
-
-    // Toggle source expansion
-  const toggleSourceExpansion = (sourceId: string) => {
-    setExpandedSource(expandedSource === sourceId ? null : sourceId)
-  }
-
   // Initialize AI-generated suggestions for the current trend
-  const initializeTrendSuggestions = async () => {
+  const initializeTrendSuggestions = useCallback(async () => {
     if (!newsletter?.trends || currentIdx >= newsletter.trends.length) return
     
     const currentTrend = newsletter.trends[currentIdx]
@@ -146,6 +129,23 @@ function ChatSessionPageContent() {
     } finally {
       setIsInitializing(false)
     }
+  }, [newsletter, currentIdx])
+
+  // Start with empty history for each topic - no more seedHistory
+  useEffect(() => {
+    if (newsletter?.trends && newsletter.trends.length > 0 && currentIdx < newsletter.trends.length) {
+      setHistory([]) // Start with empty history for each topic
+      setSuggest([]) // Reset suggestions
+      setIsInitializing(false) // Reset initialization state
+      
+      // Initialize with AI-generated suggestions for the current trend
+      initializeTrendSuggestions()
+    }
+  }, [newsletter, currentIdx, initializeTrendSuggestions])
+
+    // Toggle source expansion
+  const toggleSourceExpansion = (sourceId: string) => {
+    setExpandedSource(expandedSource === sourceId ? null : sourceId)
   }
 
   // Auto-scroll is now handled by ChatWindow component

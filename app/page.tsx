@@ -138,7 +138,7 @@ export default function HomePage() {
                 加载失败: {newsletterError}
               </div>
             ) : (
-              <ExpandableCard title="今日发现" newsletter={newsletter} cacheKey={cacheKey} />
+              <ExpandableCard newsletter={newsletter} cacheKey={cacheKey} />
             )}
           </section>
 

@@ -45,7 +45,7 @@ interface ExpandableCardProps {
   cacheKey?: string | null
 }
 
-export default function ExpandableCard({ title, cardContent, newsletter, cacheKey }: ExpandableCardProps) {
+export default function ExpandableCard({ newsletter, cacheKey }: Omit<ExpandableCardProps, 'title' | 'cardContent'>) {
   const router = useRouter()
   const [todaysTheme, setTodaysTheme] = useState<TrendResponse | null>(null)
   const [loading, setLoading] = useState(true)
