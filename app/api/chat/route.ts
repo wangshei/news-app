@@ -115,11 +115,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         success: true,
         data: {
-          answer: JSON.stringify({
-            questions: ["请求格式错误", "请检查输入", "重新尝试"],
-            summary: "请求格式错误，请重新尝试",
-            description: "抱歉，请求格式有问题，请重新尝试。"
-          }),
+          answer: "抱歉，请求格式有问题，请重新尝试。",
           nextQuestions: []
         }
       });
@@ -178,11 +174,7 @@ export async function POST(req: NextRequest) {
               return NextResponse.json({
                 success: true,
                 data: {
-                  answer: JSON.stringify({
-                    questions: ["数据生成中，请稍候", "请等待新闻内容加载完成", "稍后再试"],
-                    summary: "数据生成中，请稍候",
-                    description: "新闻内容正在生成中，请稍后再试。"
-                  }),
+                  answer: "新闻内容正在生成中，请稍后再试。",
                   nextQuestions: []
                 }
               });
@@ -211,11 +203,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({
           success: true,
           data: {
-            answer: JSON.stringify({
-              questions: ["正在获取今日新闻", "请稍后再试", "新闻内容加载中"],
-              summary: "正在获取今日新闻，请稍后再试",
-              description: "我正在获取今日新闻，请稍后再试。"
-            }),
+            answer: "我正在获取今日新闻，请稍后再试。",
             nextQuestions: []
           }
         });
@@ -268,11 +256,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({
               success: true,
               data: {
-                answer: JSON.stringify({
-                  questions: ["新闻已过期", "请返回首页", "重新选择"],
-                  summary: "新闻已过期或不存在",
-                  description: "抱歉，这条新闻已过期或不存在，请返回首页重新选择。"
-                }),
+                answer: "抱歉，这条新闻已过期或不存在，请返回首页重新选择。",
                 nextQuestions: []
               }
             });
@@ -290,11 +274,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({
           success: true,
           data: {
-            answer: JSON.stringify({
-              questions: ["无法加载新闻", "请稍后再试", "系统错误"],
-              summary: "无法加载新闻内容",
-              description: "抱歉，无法加载新闻内容，请稍后再试。"
-            }),
+            answer: "抱歉，无法加载新闻内容，请稍后再试。",
             nextQuestions: []
           }
         });
@@ -308,15 +288,11 @@ export async function POST(req: NextRequest) {
     if (contextType === "trend" && contextData && 'trends' in contextData) {
       trend = contextData.trends.find((t: Trend) => t.id === topicId);
       if (!trend) {
-        console.log(`[CHAT] Topic not found in trends: ${topicId}`);
+        console.log("[CHAT] Topic not found in trends:", topicId);
         return NextResponse.json({
           success: true,
           data: {
-            answer: JSON.stringify({
-              questions: ["主题不存在", "请返回首页", "重新选择"],
-              summary: "该主题不存在",
-              description: "抱歉，该主题不存在，请返回首页重新选择。"
-            }),
+            answer: "抱歉，该主题不存在，请返回首页重新选择。",
             nextQuestions: []
           }
         });
@@ -327,15 +303,11 @@ export async function POST(req: NextRequest) {
     
     // If neither trend nor headline found, return loading response
     if (!trend && !headline) {
-      console.log(`[CHAT] Topic not found: ${topicId}, returning loading response`);
+      console.log("[CHAT] Topic not found:", topicId, ", returning loading response");
       return NextResponse.json({
         success: true,
         data: {
-          answer: JSON.stringify({
-            questions: ["正在加载", "请稍等", "系统准备中"],
-            summary: "正在阅读今日新闻",
-            description: "我正在阅读今日新闻，请等我一下哦！"
-          }),
+          answer: "我正在阅读今日新闻，请等我一下哦！",
           nextQuestions: []
         }
       });
@@ -467,6 +439,8 @@ ${trend.headlines.map((h: Headline) => `• ${h.title}（${h.source}）`).join('
 
 请用中文详细回答用户问题（约150字）。请用 Markdown 格式输出答案，适当加粗关键词、分段、使用列表、引用、表情符号（如😊、💡、📈）等，让内容更愉快且易读。如需强调风险、建议、结论，可用**加粗**或>引用。
 
+重要：直接返回JSON格式，不要添加任何markdown代码块标记。
+
 严格返回 JSON:
 {
   "answer": "...",
@@ -474,7 +448,8 @@ ${trend.headlines.map((h: Headline) => `• ${h.title}（${h.source}）`).join('
 }`;
     } else if (headline) {
       prompt = `你是一位友好且睿智的新闻对话伙伴，具备全球视野和跨领域知识，喜欢用轻松自然的语气和用户交流，善于用真实案例、比喻和提问激发用户思考。你的目标是让对话像朋友间的讨论一样有温度、有启发性。
-。以下是今日新闻摘要：
+
+以下是今日新闻摘要：
 标题: ${headline.title}
 来源: ${headline.source}
 时间: ${new Date(headline.timestamp).toLocaleString()}
@@ -483,6 +458,8 @@ ${trend.headlines.map((h: Headline) => `• ${h.title}（${h.source}）`).join('
 "${body.question}"
 
 请用中文详细回答用户问题（约150字）。请用 Markdown 格式输出答案，适当加粗关键词、分段、使用列表、引用、表情符号（如😊、💡、📈）等，让内容更易读。如需强调风险、建议、结论，可用**加粗**或>引用。
+
+重要：直接返回JSON格式，不要添加任何markdown代码块标记。
 
 严格返回 JSON:
 {
@@ -497,6 +474,8 @@ ${trend.headlines.map((h: Headline) => `• ${h.title}（${h.source}）`).join('
 "${body.question}"
 
 请用 Markdown 格式输出答案，适当加粗关键词、分段、使用列表、引用等，让内容更易读。
+
+重要：直接返回JSON格式，不要添加任何markdown代码块标记。
 
 严格返回 JSON:
 {
@@ -534,19 +513,36 @@ ${trend.headlines.map((h: Headline) => `• ${h.title}（${h.source}）`).join('
     // Parse the response
     let parsed;
     try { 
+      // First try to parse as-is
       parsed = JSON.parse(raw); 
       console.log("[CHAT] Successfully parsed AI response:", parsed);
     } catch(e) {
       console.warn("[CHAT] JSON parse fail for response:", raw);
       console.warn("[CHAT] Parse error:", e);
-      parsed = {
-        answer: JSON.stringify({
-          questions: ["AI服务暂时卡住了", "请再试一次", "服务恢复中"],
-          summary: "AI服务暂时卡住了，请再试一次",
-          description: "抱歉，AI服务暂时卡住了，请再试一次吧！"
-        }),
-        nextQuestions: ["请重新尝试", "换个问题问我"]
-      };
+      
+      // Try to extract JSON from markdown code blocks
+      let cleanedRaw = raw;
+      if (raw.includes('```json')) {
+        const jsonMatch = raw.match(/```json\s*([\s\S]*?)\s*```/);
+        if (jsonMatch) {
+          cleanedRaw = jsonMatch[1].trim();
+          console.log("[CHAT] Extracted JSON from markdown:", cleanedRaw.substring(0, 100));
+          try {
+            parsed = JSON.parse(cleanedRaw);
+            console.log("[CHAT] Successfully parsed extracted JSON:", parsed);
+          } catch (extractError) {
+            console.warn("[CHAT] Failed to parse extracted JSON:", extractError);
+          }
+        }
+      }
+      
+      // If still no success, use fallback
+      if (!parsed) {
+        parsed = {
+          answer: "抱歉，AI服务暂时卡住了，请再试一次吧！",
+          nextQuestions: ["请重新尝试", "换个问题问我"]
+        };
+      }
     }
     
     // For structured content requests, return the parsed content directly
@@ -625,11 +621,7 @@ AI回答: "${parsed.answer}"
       const fallbackResponse = {
         success: true,
         data: {
-          answer: JSON.stringify({
-            questions: ["AI服务暂时不可用", "请稍后再试", "服务恢复中"],
-            summary: "AI服务暂时不可用，请稍后再试",
-            description: "抱歉😞，AI 服务暂时不可用，请稍后再试。"
-          }),
+          answer: "抱歉😞，AI 服务暂时不可用，请稍后再试。",
           nextQuestions: []
         }
       }
@@ -641,11 +633,7 @@ AI回答: "${parsed.answer}"
     return NextResponse.json({
       success: true,
       data: {
-        answer: JSON.stringify({
-          questions: ["系统遇到问题", "请稍后再试", "正在恢复中"],
-          summary: "系统遇到问题，请稍后再试",
-          description: "抱歉，系统遇到了一些问题，请稍后再试。"
-        }),
+        answer: "抱歉，系统遇到了一些问题，请稍后再试。",
         nextQuestions: []
       }
     });
